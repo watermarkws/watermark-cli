@@ -1,0 +1,19 @@
+{
+  "name": "@watermark/cli",
+  "version": "0.1.0",
+  "description": "Watermark, resize and convert images, videos and PDFs from the command line with the Watermark API.",
+  "type": "module",
+  "bin": {
+    "watermark": "bin/watermark.js"
+  },
+  "files": ["bin", "src", "README.md", "LICENSE"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "keywords": ["watermark", "image", "video", "pdf", "cli", "api"],
+  "homepage": "https://api.watermark.ws/docs",
+  "license": "MIT"
+}
