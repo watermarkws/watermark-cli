@@ -241,7 +241,9 @@ function describeRequest(request) {
   const lines = [`Request ${request.id} (${request.endpoint}): ${request.status}`];
   if (request.status === 'failed' && request.error) lines.push(`Error ${request.error.code}: ${request.error.message}`);
   if (request.result?.data) lines.push(`Result: ${JSON.stringify(request.result.data)}`);
-  for (const file of request.result?.files || []) lines.push(`File: ${file.url} (link valid until ${file.url_expires_at})`);
+  for (const file of request.result?.files || []) {
+    lines.push(file.url ? `File: ${file.url} (link valid until ${file.url_expires_at})` : 'File: made, but no download link is available right now; fetch the request again.');
+  }
   if (request.saved_to) lines.push(`Saved to ${request.saved_to}`);
   if (request.price) lines.push(`Price: $${request.price.amount}`);
   return lines.join('\n');
