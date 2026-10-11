@@ -113,3 +113,10 @@ test('a 429 is retried after Retry-After with the same idempotency key', async (
   assert.equal(calls.length, 2);
   assert.equal(calls[0].headers['Idempotency-Key'], calls[1].headers['Idempotency-Key']);
 });
+
+test('--version prints the version without a key', async () => {
+  let out = '';
+  const code = await main(['--version'], { env: {}, stdout: { write: (text) => { out += text; } }, stderr: { write: () => {} } });
+  assert.equal(code, 0);
+  assert.match(out, /^watermark \d+\.\d+\.\d+/);
+});

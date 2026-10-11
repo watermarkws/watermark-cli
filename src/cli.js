@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import { Api, ApiError } from './api.js';
+import { Api, ApiError, VERSION } from './api.js';
 
 const HELP = `watermark: the Watermark API from the command line (https://api.watermark.ws/docs)
 
@@ -36,6 +36,7 @@ Options:
   --json                  Print JSON only (for scripts and AI agents).
   --api-key <key>         Or set WATERMARK_API_KEY.
   --base-url <url>        Or set WATERMARK_API_URL (default https://api.watermark.ws).
+  --version               Print the version.
 `;
 
 const MEDIA = { image: 'images', images: 'images', video: 'videos', videos: 'videos', document: 'documents', documents: 'documents', pdf: 'documents' };
@@ -109,6 +110,11 @@ export async function main(argv, { env = {}, stdout, stderr, fetch, sleep } = {}
     return 2;
   }
   const { positionals, options } = parsed;
+
+  if (options.version) {
+    print(`watermark ${VERSION}`);
+    return 0;
+  }
 
   if (options.help || positionals.length === 0) {
     print(HELP);
