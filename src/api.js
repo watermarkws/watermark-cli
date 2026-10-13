@@ -65,18 +65,52 @@ export class Api {
     }
   }
 
-  // Poll a request until it is succeeded, failed or aborted.
+  // Wait for a request to be succeeded, failed or aborted. Each call asks the
+  // API to hold the response until the request finishes (up to 25 seconds),
+  // so the result comes back as soon as it is ready.
   async wait(id, { timeoutMs = 300_000, intervalMs = 1000, onProgress } = {}) {
     const started = Date.now();
     for (;;) {
-      const request = await this.request('GET', `/v1/requests/${id}`);
+      const hold = Math.max(0, Math.min(25, Math.floor((timeoutMs - (Date.now() - started)) / 1000)));
+      const before = Date.now();
+      const request = await this.request('GET', `/v1/requests/${id}`, { query: { wait: hold || undefined } });
       if (['succeeded', 'failed', 'aborted'].includes(request.status)) return request;
       if (onProgress) onProgress(request);
       if (Date.now() - started >= timeoutMs) {
         throw new Error(`Request ${id} was still ${request.status} after ${Math.round(timeoutMs / 1000)} seconds.`);
       }
+      if (hold > 0 && Date.now() - before >= (hold - 1) * 1000) continue;
       await this.sleep(intervalMs);
       intervalMs = Math.min(5000, intervalMs * 1.5);
     }
   }
+
+  // Make an upload for a local file and PUT the file to its URL. Its id is
+  // then a request's source.
+  async upload(path, { readFile, contentType } = {}) {
+    const bytes = await readFile(path);
+    const filename = path.split(/[\\/]/).pop();
+    const type = contentType || contentTypeOf(filename);
+    const upload = await this.request('POST', '/v1/uploads', { body: { filename, size: bytes.length, content_type: type } });
+
+    const response = await this.fetch(upload.upload.url, {
+      method: 'PUT',
+      headers: upload.upload.headers || { 'Content-Type': type },
+      body: bytes,
+    });
+    if (!response.ok) throw new Error(`Sending ${filename} failed: HTTP ${response.status}.`);
+
+    return upload;
+  }
+}
+
+const CONTENT_TYPES = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif',
+  heic: 'image/heic', heif: 'image/heif', tif: 'image/tiff', tiff: 'image/tiff',
+  mp4: 'video/mp4', mov: 'video/quicktime', m4v: 'video/x-m4v', webm: 'video/webm', mkv: 'video/x-matroska',
+  pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
+
+export function contentTypeOf(filename) {
+  return CONTENT_TYPES[(filename.split('.').pop() || '').toLowerCase()] || 'application/octet-stream';
 }

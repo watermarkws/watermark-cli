@@ -15,14 +15,20 @@ Node 18+, no dependencies.
 ## Commands
 
 ```
-watermark image process <url> --op <operation> [--op ...] [--format webp] [--out file]
-watermark image read <url>
-watermark video process <url> --op <operation> [--max-duration 30] [--out file]
-watermark video read <url> | watermark video screenshot <url> --seconds 5
-watermark document process <url> --op <operation> [--max-pages 10] [--out file]
-watermark document read <url> | watermark document snapshot <url> --page 1
+watermark image process <source> --op <operation> [--op ...] [--format webp] [--out file]
+watermark image read <source>
+watermark image create --width 1200 --height 300 --op 'text:text=Hi,font=inter-bold,size=96' --op trim --out logo.png
+watermark video process <source> --op <operation> [--max-duration 30] [--out file]
+watermark video read <source> | watermark video screenshot <source> --seconds 5
+watermark document process <source> --op <operation> [--max-pages 10] [--out file]
+watermark document read <source> | watermark document snapshot <source> --page 1
 watermark request get <id> | watermark request abort <id>
 watermark requests | watermark account | watermark usage --group-by endpoint
+watermark upload photo.heic | watermark upload get|delete <upl_id>
+watermark file get|delete <file_id>
+watermark storage list | connect --bucket b --region us-east-1 --role-arn <arn> | get|verify|disconnect <stg_id>
+watermark events --since 2026-10-13T15:00:00Z
+watermark fonts
 watermark operations image
 ```
 
@@ -31,6 +37,10 @@ Processing commands wait for the request to finish (up to `--timeout`, default 3
 Operations run in order: `--op type:param=value,param=value`, or all at once with `--ops-json '[{"type":"resize","width":800,"height":600}]'`. `watermark operations` lists them all.
 
 Other options: `--webhook <url>`, `--customer <id>`, `--metadata key=value`, `--idempotency-key <key>`, `--json`, `--api-key`, `--base-url` (or `WATERMARK_API_URL`).
+
+A source is a public http(s) URL, a local file (uploaded first), an upload
+(`upl_…`), a file an earlier request kept (`file_…`), or an object in a
+connected bucket (`stg_7a:path/to/key`).
 
 ## Exit codes
 

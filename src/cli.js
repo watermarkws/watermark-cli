@@ -1,22 +1,33 @@
-import { writeFile } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { Api, ApiError, VERSION } from './api.js';
 
 const HELP = `watermark: the Watermark API from the command line (https://api.watermark.ws/docs)
 
 Usage:
-  watermark image process <url> --op <operation> [--op ...] [--format webp] [--out file]
-  watermark image read <url>
-  watermark video process <url> --op <operation> [--max-duration 30] [--out file]
-  watermark video read <url>
-  watermark video screenshot <url> --seconds 5 [--format png] [--out file]
-  watermark document process <url> --op <operation> [--max-pages 10] [--out file]
-  watermark document read <url>
-  watermark document snapshot <url> [--page 1] [--format png] [--out file]
+  watermark image process <source> --op <operation> [--op ...] [--format webp] [--out file]
+  watermark image read <source>
+  watermark image create --width 1200 --height 300 [--background "#ffffff"] --op <operation> [--out file]
+  watermark video process <source> --op <operation> [--max-duration 30] [--out file]
+  watermark video read <source>
+  watermark video screenshot <source> --seconds 5 [--format png] [--out file]
+  watermark document process <source> --op <operation> [--max-pages 10] [--out file]
+  watermark document read <source>
+  watermark document snapshot <source> [--page 1] [--format png] [--out file]
   watermark request get <id> | watermark request abort <id>
   watermark requests [--limit 20]
+  watermark upload <file> | watermark upload get|delete <upl_id>
+  watermark file get|delete <file_id>
+  watermark storage list | get|verify|disconnect <stg_id>
+  watermark storage connect --bucket <name> --region <region> --role-arn <arn> [--prefix in/ ...]
+  watermark events --since 2026-10-13T15:00:00Z [--limit 100]
+  watermark fonts
   watermark account
   watermark usage [--from 2026-10-01] [--to 2026-10-31] [--group-by day|endpoint|customer|status]
   watermark operations [image|video|document]
+
+A source is a public http(s) URL, a local file (uploaded first), an upload
+(upl_…), a file an earlier request kept (file_…), or an object in a
+connected bucket (stg_7a:path/to/key).
 
 Operations (repeat --op; they run in order):
   --op resize:width=800,height=600
@@ -41,17 +52,17 @@ Options:
 
 const MEDIA = { image: 'images', images: 'images', video: 'videos', videos: 'videos', document: 'documents', documents: 'documents', pdf: 'documents' };
 const ACTIONS = {
-  images: ['process', 'read'],
+  images: ['process', 'read', 'create'],
   videos: ['process', 'read', 'screenshot'],
   documents: ['process', 'read', 'snapshot'],
 };
-const REPEATABLE = new Set(['op', 'metadata']);
+const REPEATABLE = new Set(['op', 'metadata', 'prefix']);
 const FLAGS = new Set(['json', 'no-wait', 'help', 'version']);
 
 // Parse argv into positionals and options; repeatable options collect arrays.
 export function parseArgs(argv) {
   const positionals = [];
-  const options = { op: [], metadata: [] };
+  const options = { op: [], metadata: [], prefix: [] };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -175,6 +186,56 @@ export async function main(argv, { env = {}, stdout, stderr, fetch, sleep } = {}
         ].join('\n')).join('\n\n'));
         return 0;
       }
+      case 'upload': {
+        const [action, id] = rest;
+        if (['get', 'delete'].includes(action)) {
+          if (!/^upl_[A-Za-z0-9]{22}$/.test(id || '')) throw new UsageError('Usage: watermark upload get|delete <upl_id>');
+          output(await api.request(action === 'get' ? 'GET' : 'DELETE', `/v1/uploads/${id}`), describeUpload);
+          return 0;
+        }
+        if (!action) throw new UsageError('Usage: watermark upload <file>');
+        output(await api.upload(action, { readFile }), describeUpload);
+        return 0;
+      }
+      case 'file': {
+        const [action, id] = rest;
+        if (!['get', 'delete'].includes(action) || !/^file_[A-Za-z0-9]{22}$/.test(id || '')) throw new UsageError('Usage: watermark file get|delete <file_id>');
+        output(await api.request(action === 'get' ? 'GET' : 'DELETE', `/v1/files/${id}`), describeFile);
+        return 0;
+      }
+      case 'storage': {
+        const [action, id] = rest;
+        if (action === 'list' || !action) {
+          output(await api.request('GET', '/v1/storage'), (value) => value.data.map(describeStorage).join('\n\n') || 'No storage connections.');
+          return 0;
+        }
+        if (action === 'connect') {
+          if (!options.bucket || !options.region || !options['role-arn']) throw new UsageError('Usage: watermark storage connect --bucket <name> --region <region> --role-arn <arn> [--prefix in/ ...]');
+          const body = { bucket: options.bucket, region: options.region, role_arn: options['role-arn'] };
+          if (options.prefix.length) body.prefixes = options.prefix;
+          output(await api.request('POST', '/v1/storage', { body }), describeStorage);
+          return 0;
+        }
+        if (!['get', 'verify', 'disconnect'].includes(action) || !/^stg_[0-9a-z]{1,12}$/.test(id || '')) throw new UsageError('Usage: watermark storage list | get|verify|disconnect <stg_id> | connect ...');
+        const method = { get: 'GET', verify: 'POST', disconnect: 'DELETE' }[action];
+        const storage = await api.request(method, `/v1/storage/${id}${action === 'verify' ? '/verify' : ''}`);
+        output(storage, describeStorage);
+        return action === 'verify' && storage.status !== 'verified' ? 1 : 0;
+      }
+      case 'events': {
+        if (!options.since) throw new UsageError('Usage: watermark events --since 2026-10-13T15:00:00Z [--limit 100]');
+        const events = await api.request('GET', '/v1/events', { query: { since: options.since, limit: options.limit } });
+        output(events, (value) => [
+          ...value.data.map((event) => `${new Date(event.created * 1000).toISOString()}\t${event.type}\trequest ${event.data?.id}`),
+          value.has_more ? `More: watermark events --since ${new Date(value.data.at(-1).created * 1000).toISOString()}` : '',
+        ].filter(Boolean).join('\n') || 'No events since then.');
+        return 0;
+      }
+      case 'fonts': {
+        const fonts = await api.request('GET', '/v1/fonts');
+        output(fonts, (value) => value.data.map((font) => `${font.name}\t${[font.family, font.style].filter(Boolean).join(' ')}`).join('\n'));
+        return 0;
+      }
       default:
         throw new UsageError(`Unknown command "${command}". Run watermark --help.`);
     }
@@ -194,17 +255,26 @@ export async function main(argv, { env = {}, stdout, stderr, fetch, sleep } = {}
 }
 
 async function runMedia(api, media, [action, source], options, { output, print, json, fetch }) {
-  if (!ACTIONS[media].includes(action)) throw new UsageError(`Usage: watermark ${media.replace(/s$/, '')} ${ACTIONS[media].join('|')} <url>`);
-  if (!source || !/^https?:\/\//.test(source)) throw new UsageError('The source must be a public http(s) URL.');
+  if (!ACTIONS[media].includes(action)) throw new UsageError(`Usage: watermark ${media.replace(/s$/, '')} ${ACTIONS[media].join('|')} <source>`);
 
-  const body = { source };
+  const body = {};
 
-  if (action === 'process') {
+  if (action === 'create') {
+    if (!options.width || !options.height) throw new UsageError('watermark image create needs --width and --height.');
+    body.width = Number(options.width);
+    body.height = Number(options.height);
+    if (options.background) body.background = options.background;
+  } else {
+    body.source = await resolveSource(api, source);
+  }
+
+  if (action === 'process' || action === 'create') {
     const operations = options['ops-json'] ? JSON.parse(options['ops-json']) : options.op.map(parseOperation);
     if (operations.length === 0) throw new UsageError('Give at least one --op (see: watermark operations).');
     body.operations = operations;
   }
   if (options.format) body.output = { format: options.format };
+  else if (action === 'create' && options.out) body.output = { format: options.out.split('.').pop().toLowerCase() };
   if (options.seconds !== undefined) body.seconds = Number(options.seconds);
   if (action === 'screenshot' && body.seconds === undefined) throw new UsageError('A screenshot needs --seconds.');
   if (options.page !== undefined) body.page = Number(options.page);
@@ -243,12 +313,49 @@ async function runMedia(api, media, [action, source], options, { output, print, 
   return request.status === 'failed' || request.status === 'aborted' ? 1 : 0;
 }
 
+// A source as the API takes it: a URL, an id, a storage object, or a local
+// file, which is uploaded first.
+async function resolveSource(api, source) {
+  if (!source) throw new UsageError('Give a source: a URL, a local file, upl_…, file_… or stg_…:key.');
+  if (/^https?:\/\//.test(source) || /^(upl|file)_[A-Za-z0-9]{22}$/.test(source)) return source;
+
+  const object = source.match(/^(stg_[0-9a-z]{1,12}):(.+)$/s);
+  if (object) return { storage: object[1], key: object[2] };
+
+  const local = await stat(source).catch(() => null);
+  if (!local?.isFile()) throw new UsageError(`"${source}" is not a URL, an id, stg_…:key, or a file here.`);
+
+  const upload = await api.upload(source, { readFile });
+  return upload.id;
+}
+
+function describeUpload(upload) {
+  return `Upload ${upload.id} (${upload.filename}): ${upload.status}${upload.expires_at ? `, until ${upload.expires_at}` : ''}`;
+}
+
+function describeFile(file) {
+  const lines = [`File ${file.id} (${file.name}, ${file.format}, ${file.size} bytes)`];
+  if (file.url) lines.push(`Download: ${file.url} (until ${file.url_expires_at})`);
+  if (file.destination) lines.push(`Written to: ${file.destination.storage ? `${file.destination.storage}:${file.destination.key}` : 'your URL'}`);
+  if (file.deleted_at && !file.url) lines.push(`Deleted ${file.deleted_at}`);
+  return lines.join('\n');
+}
+
+function describeStorage(storage) {
+  const lines = [`${storage.id}: s3://${storage.bucket} (${storage.region}), ${storage.status}`];
+  if (storage.prefixes?.length) lines.push(`Prefixes: ${storage.prefixes.join(', ')}`);
+  if (storage.status !== 'verified' && storage.trust_policy) lines.push(`Create the role with the trust_policy and permissions_policy shown with --json (external id ${storage.external_id}), then run: watermark storage verify ${storage.id}`);
+  if (storage.last_error) lines.push(`Problem: ${storage.last_error}`);
+  return lines.join('\n');
+}
+
 function describeRequest(request) {
   const lines = [`Request ${request.id} (${request.endpoint}): ${request.status}`];
   if (request.status === 'failed' && request.error) lines.push(`Error ${request.error.code}: ${request.error.message}`);
   if (request.result?.data) lines.push(`Result: ${JSON.stringify(request.result.data)}`);
   for (const file of request.result?.files || []) {
-    lines.push(file.url ? `File: ${file.url} (link valid until ${file.url_expires_at})` : 'File: made, but no download link is available right now; fetch the request again.');
+    if (file.destination) lines.push(`File: written to ${file.destination.storage ? `${file.destination.storage}:${file.destination.key}` : 'your URL'}`);
+    else lines.push(file.url ? `File: ${file.url} (link valid until ${file.url_expires_at})` : 'File: made, but no download link is available right now; fetch the request again.');
   }
   if (request.saved_to) lines.push(`Saved to ${request.saved_to}`);
   if (request.price) lines.push(`Price: $${request.price.amount}`);
