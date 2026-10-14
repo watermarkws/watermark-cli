@@ -5,7 +5,7 @@ const HELP = `watermark: the Watermark API from the command line (https://api.wa
 
 Usage:
   watermark image process <source> --op <operation> [--op ...] [--format webp] [--out file]
-  watermark image read <source>
+  watermark image read <source> [--level]
   watermark image create --width 1200 --height 300 [--background "#ffffff"] --op <operation> [--out file]
   watermark video process <source> --op <operation> [--max-duration 30] [--out file]
   watermark video read <source>
@@ -14,15 +14,16 @@ Usage:
   watermark document read <source>
   watermark document snapshot <source> [--page 1] [--format png] [--out file]
   watermark request get <id> | watermark request abort <id>
-  watermark requests [--limit 20]
+  watermark requests [--limit 20] [--before <id>]
   watermark upload <file> | watermark upload get|delete <upl_id>
   watermark file get|delete <file_id>
   watermark storage list | get|verify|disconnect <stg_id>
-  watermark storage connect --bucket <name> --region <region> --role-arn <arn> [--prefix in/ ...]
+  watermark storage connect --bucket <name> --region <region> --role-arn <arn> --prefix in/ [--prefix ...] [--read true|false] [--write true|false]
+  watermark storage update <stg_id> [--prefix in/ ...] [--read true|false] [--write true|false]
   watermark events --since 2026-10-13T15:00:00Z [--limit 100]
   watermark fonts
   watermark account
-  watermark usage [--from 2026-10-01] [--to 2026-10-31] [--group-by day|endpoint|customer|status]
+  watermark usage [--from 2026-10-01] [--to 2026-10-31] [--group-by day|endpoint|customer|status] [--customer <id>]
   watermark operations [image|video|document]
 
 A source is a public http(s) URL, a local file (uploaded first), an upload
@@ -36,11 +37,15 @@ Operations (repeat --op; they run in order):
   --ops-json '[{"type":"resize","width":800,"height":600}]'
   See: watermark operations image
 
+  More than one file from a request, each with its own operations and format:
+  --outputs-json '[{"name":"large","format":"webp"},{"name":"thumb","operations":[{"type":"resize","width":200,"height":200}]}]'
+
 Options:
   --out <file>            Wait, then download the result to this file.
   --no-wait               Return as soon as the request is queued.
   --timeout <seconds>     How long to wait (default 300).
   --webhook <url>         Post the finished request here.
+  --event <type>          The webhook events to send (repeatable), such as request.progress.
   --customer <id>         Your own reference for who the request is for.
   --metadata key=value    Repeatable.
   --idempotency-key <k>   Make a retry of this command safe.
@@ -56,13 +61,13 @@ const ACTIONS = {
   videos: ['process', 'read', 'screenshot'],
   documents: ['process', 'read', 'snapshot'],
 };
-const REPEATABLE = new Set(['op', 'metadata', 'prefix']);
-const FLAGS = new Set(['json', 'no-wait', 'help', 'version']);
+const REPEATABLE = new Set(['op', 'metadata', 'prefix', 'event']);
+const FLAGS = new Set(['json', 'no-wait', 'help', 'version', 'level']);
 
 // Parse argv into positionals and options; repeatable options collect arrays.
 export function parseArgs(argv) {
   const positionals = [];
-  const options = { op: [], metadata: [], prefix: [] };
+  const options = { op: [], metadata: [], prefix: [], event: [] };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -210,13 +215,21 @@ export async function main(argv, { env = {}, stdout, stderr, fetch, sleep } = {}
           return 0;
         }
         if (action === 'connect') {
-          if (!options.bucket || !options.region || !options['role-arn']) throw new UsageError('Usage: watermark storage connect --bucket <name> --region <region> --role-arn <arn> [--prefix in/ ...]');
-          const body = { bucket: options.bucket, region: options.region, role_arn: options['role-arn'] };
-          if (options.prefix.length) body.prefixes = options.prefix;
+          if (!options.bucket || !options.region || !options['role-arn'] || !options.prefix.length) throw new UsageError('Usage: watermark storage connect --bucket <name> --region <region> --role-arn <arn> --prefix in/ [--prefix ...] [--read true|false] [--write true|false]');
+          const body = { provider: 's3', bucket: options.bucket, region: options.region, role_arn: options['role-arn'], prefixes: options.prefix, ...storageSwitches(options) };
           output(await api.request('POST', '/v1/storage', { body }), describeStorage);
           return 0;
         }
-        if (!['get', 'verify', 'disconnect'].includes(action) || !/^stg_[0-9a-z]{1,12}$/.test(id || '')) throw new UsageError('Usage: watermark storage list | get|verify|disconnect <stg_id> | connect ...');
+        if (action === 'update') {
+          const usage = 'Usage: watermark storage update <stg_id> [--prefix in/ ...] [--read true|false] [--write true|false]';
+          if (!/^stg_[0-9a-z]{1,12}$/.test(id || '')) throw new UsageError(usage);
+          const body = storageSwitches(options);
+          if (options.prefix.length) body.prefixes = options.prefix;
+          if (!Object.keys(body).length) throw new UsageError(usage);
+          output(await api.request('PATCH', `/v1/storage/${id}`, { body }), describeStorage);
+          return 0;
+        }
+        if (!['get', 'verify', 'disconnect'].includes(action) || !/^stg_[0-9a-z]{1,12}$/.test(id || '')) throw new UsageError('Usage: watermark storage list | get|verify|disconnect <stg_id> | connect ... | update ...');
         const method = { get: 'GET', verify: 'POST', disconnect: 'DELETE' }[action];
         const storage = await api.request(method, `/v1/storage/${id}${action === 'verify' ? '/verify' : ''}`);
         output(storage, describeStorage);
@@ -245,8 +258,8 @@ export async function main(argv, { env = {}, stdout, stderr, fetch, sleep } = {}
       return 2;
     }
     if (error instanceof ApiError) {
-      if (json) print(JSON.stringify({ error: { status: error.status, type: error.type, code: error.code, message: error.message, param: error.param, request_id: error.requestId } }, null, 2));
-      else fail(`Error ${error.status} ${error.code}: ${error.message}${error.param ? ` (${error.param})` : ''}`);
+      if (json) print(JSON.stringify({ error: { ...error.error, status: error.status, type: error.type, code: error.code, message: error.message } }, null, 2));
+      else fail(describeError(error));
       return 1;
     }
     fail(error.message);
@@ -268,11 +281,17 @@ async function runMedia(api, media, [action, source], options, { output, print, 
     body.source = await resolveSource(api, source);
   }
 
+  if (options.level) {
+    if (media !== 'images' || action !== 'read') throw new UsageError('--level is for watermark image read.');
+    body.level = true;
+  }
+
   if (action === 'process' || action === 'create') {
     const operations = options['ops-json'] ? JSON.parse(options['ops-json']) : options.op.map(parseOperation);
     if (operations.length === 0) throw new UsageError('Give at least one --op (see: watermark operations).');
     body.operations = operations;
   }
+  if (options['outputs-json']) body.outputs = JSON.parse(options['outputs-json']);
   if (options.format) body.output = { format: options.format };
   else if (action === 'create' && options.out) body.output = { format: options.out.split('.').pop().toLowerCase() };
   if (options.seconds !== undefined) body.seconds = Number(options.seconds);
@@ -281,6 +300,7 @@ async function runMedia(api, media, [action, source], options, { output, print, 
   if (options['max-duration'] !== undefined) body.max_duration = Number(options['max-duration']);
   if (options['max-pages'] !== undefined) body.max_pages = Number(options['max-pages']);
   if (options.webhook) body.webhook_url = options.webhook;
+  if (options.event.length) body.events = options.event;
   if (options.customer) body.customer = options.customer;
   if (options.metadata.length) {
     body.metadata = Object.fromEntries(options.metadata.map((pair) => {
@@ -327,6 +347,30 @@ async function resolveSource(api, source) {
 
   const upload = await api.upload(source, { readFile });
   return upload.id;
+}
+
+// --read and --write as the API takes them, for connecting or changing storage.
+function storageSwitches(options) {
+  const switches = {};
+  for (const field of ['read', 'write']) {
+    if (options[field] === undefined) continue;
+    if (!['true', 'false'].includes(options[field])) throw new UsageError(`--${field} takes true or false.`);
+    switches[field] = options[field] === 'true';
+  }
+  return switches;
+}
+
+// An API error for people: the code to branch on, every invalid field, and
+// the permissions policy a storage change whose check failed needs.
+function describeError(error) {
+  const lines = [`Error ${error.status} ${error.code}: ${error.message}${error.param ? ` (${error.param})` : ''}`];
+  for (const [field, messages] of Object.entries(error.errors || {})) {
+    lines.push(`  ${field}: ${[].concat(messages).join(' ')}`);
+  }
+  if (error.error.permissions_policy) {
+    lines.push(`The role needs this permissions policy:\n${JSON.stringify(error.error.permissions_policy, null, 2)}`);
+  }
+  return lines.join('\n');
 }
 
 function describeUpload(upload) {

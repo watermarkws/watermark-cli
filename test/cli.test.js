@@ -163,6 +163,7 @@ test('files, uploads, storage, events and fonts reach their endpoints', async ()
     [['storage', 'verify', 'stg_7a'], 'POST /v1/storage/stg_7a/verify'],
     [['storage', 'disconnect', 'stg_7a'], 'DELETE /v1/storage/stg_7a'],
     [['storage', 'connect', '--bucket', 'b', '--region', 'us-east-1', '--role-arn', 'arn:aws:iam::1:role/r', '--prefix', 'in/', '--prefix', 'out/'], 'POST /v1/storage'],
+    [['storage', 'update', 'stg_7a', '--prefix', 'in/', '--prefix', 'archive/', '--write', 'false'], 'PATCH /v1/storage/stg_7a'],
     [['events', '--since', '2026-10-13T15:00:00Z'], 'GET /v1/events?since=2026-10-13T15%3A00%3A00Z'],
     [['fonts'], 'GET /v1/fonts'],
   ];
@@ -171,7 +172,8 @@ test('files, uploads, storage, events and fonts reach their endpoints', async ()
     const { calls } = await run([...argv, '--json'], [{ body: { data: [], status: 'verified' } }]);
     const url = new URL(calls[0].url);
     assert.equal(`${calls[0].method} ${url.pathname}${url.search}`, expected);
-    if (argv[1] === 'connect') assert.deepEqual(calls[0].body, { bucket: 'b', region: 'us-east-1', role_arn: 'arn:aws:iam::1:role/r', prefixes: ['in/', 'out/'] });
+    if (argv[1] === 'connect') assert.deepEqual(calls[0].body, { provider: 's3', bucket: 'b', region: 'us-east-1', role_arn: 'arn:aws:iam::1:role/r', prefixes: ['in/', 'out/'] });
+    if (argv[1] === 'update') assert.deepEqual(calls[0].body, { prefixes: ['in/', 'archive/'], write: false });
   }
 });
 
@@ -180,4 +182,60 @@ test('an SVG, a camera RAW file or a WMV is uploaded with its own type', () => {
   assert.equal(contentTypeOf('DSC_0042.NEF'), 'image/x-nikon-nef');
   assert.equal(contentTypeOf('clip.wmv'), 'video/x-ms-wmv');
   assert.equal(contentTypeOf('notes.xyz'), 'application/octet-stream');
+});
+
+test('storage update needs something to change and takes only true or false for read and write', async () => {
+  const empty = await run(['storage', 'update', 'stg_7a'], []);
+  assert.notEqual(empty.code, 0);
+  assert.match(empty.err, /storage update <stg_id>/);
+  assert.equal(empty.calls.length, 0);
+
+  const wrong = await run(['storage', 'update', 'stg_7a', '--read', 'yes'], []);
+  assert.notEqual(wrong.code, 0);
+  assert.match(wrong.err, /--read takes true or false/);
+  assert.equal(wrong.calls.length, 0);
+});
+
+test('storage connect needs a prefix and sends the provider, read and write', async () => {
+  const missing = await run(['storage', 'connect', '--bucket', 'b', '--region', 'us-east-1', '--role-arn', 'arn:aws:iam::1:role/r'], []);
+  assert.equal(missing.code, 2);
+  assert.match(missing.err, /--prefix in\//);
+  assert.equal(missing.calls.length, 0);
+
+  const { code, calls } = await run(['storage', 'connect', '--bucket', 'b', '--region', 'us-east-1', '--role-arn', 'arn:aws:iam::1:role/r', '--prefix', 'out/', '--read', 'false', '--json'], [{ body: { id: 'stg_7a', status: 'unverified' } }]);
+  assert.equal(code, 0);
+  assert.deepEqual(calls[0].body, { provider: 's3', bucket: 'b', region: 'us-east-1', role_arn: 'arn:aws:iam::1:role/r', prefixes: ['out/'], read: false });
+});
+
+test('image read can find the level angle, and --level is refused elsewhere', async () => {
+  const { calls } = await run(['image', 'read', 'https://example.com/a.jpg', '--level', '--no-wait', '--json'], [{ status: 202, body: { id: 5, status: 'queued' } }]);
+  assert.deepEqual(calls[0].body, { source: 'https://example.com/a.jpg', level: true });
+
+  const wrong = await run(['video', 'read', 'https://example.com/a.mp4', '--level'], []);
+  assert.equal(wrong.code, 2);
+  assert.match(wrong.err, /--level is for watermark image read/);
+});
+
+test('webhook events and several outputs are sent', async () => {
+  const outputs = [{ name: 'large', format: 'webp' }, { name: 'thumb', operations: [{ type: 'resize', width: 200, height: 200 }] }];
+  const { calls } = await run(['image', 'process', 'https://example.com/a.jpg', '--op', 'grayscale', '--outputs-json', JSON.stringify(outputs), '--event', 'request.progress', '--event', 'request.succeeded', '--no-wait', '--json'], [{ status: 202, body: { id: 5, status: 'queued' } }]);
+  assert.deepEqual(calls[0].body.outputs, outputs);
+  assert.deepEqual(calls[0].body.events, ['request.progress', 'request.succeeded']);
+});
+
+test('an error shows every invalid field and the permissions policy a storage change needs', async () => {
+  const policy = { Version: '2012-10-17', Statement: [{ Effect: 'Allow', Action: ['s3:GetObject'], Resource: ['arn:aws:s3:::b/archive/*'] }] };
+  const error = { type: 'invalid_request', code: 'destination_rejected', message: 'The connection was not changed.', request_id: 'ref_1', permissions_policy: policy };
+
+  const human = await run(['storage', 'update', 'stg_7a', '--prefix', 'archive/'], [{ status: 422, body: { error } }]);
+  assert.equal(human.code, 1);
+  assert.match(human.err, /Error 422 destination_rejected/);
+  assert.match(human.err, /permissions policy:\n\{/);
+  assert.match(human.err, /arn:aws:s3:::b\/archive\/\*/);
+
+  const machine = await run(['storage', 'update', 'stg_7a', '--prefix', 'archive/', '--json'], [{ status: 422, body: { error } }]);
+  assert.deepEqual(JSON.parse(machine.out).error, { ...error, status: 422 });
+
+  const invalid = await run(['image', 'process', 'https://example.com/a.jpg', '--op', 'resize:width=0'], [{ status: 422, body: { error: { type: 'invalid_request', code: 'validation_failed', message: 'Invalid.', errors: { 'operations.0.width': ['Must be at least 1.'] } } } }]);
+  assert.match(invalid.err, /operations\.0\.width: Must be at least 1\./);
 });

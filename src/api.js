@@ -13,6 +13,9 @@ export class ApiError extends Error {
     this.param = error.param;
     this.requestId = error.request_id;
     this.errors = error.errors;
+    // The whole error object as the API sent it, with the fields some errors
+    // add, such as a storage change's permissions_policy.
+    this.error = error;
   }
 }
 
