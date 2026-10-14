@@ -4,6 +4,7 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main, parseOperation } from '../src/cli.js';
+import { contentTypeOf } from '../src/api.js';
 
 // A fetch that answers from a list and records what it was sent.
 function fakeFetch(responses) {
@@ -172,4 +173,11 @@ test('files, uploads, storage, events and fonts reach their endpoints', async ()
     assert.equal(`${calls[0].method} ${url.pathname}${url.search}`, expected);
     if (argv[1] === 'connect') assert.deepEqual(calls[0].body, { bucket: 'b', region: 'us-east-1', role_arn: 'arn:aws:iam::1:role/r', prefixes: ['in/', 'out/'] });
   }
+});
+
+test('an SVG, a camera RAW file or a WMV is uploaded with its own type', () => {
+  assert.equal(contentTypeOf('logo.svg'), 'image/svg+xml');
+  assert.equal(contentTypeOf('DSC_0042.NEF'), 'image/x-nikon-nef');
+  assert.equal(contentTypeOf('clip.wmv'), 'video/x-ms-wmv');
+  assert.equal(contentTypeOf('notes.xyz'), 'application/octet-stream');
 });
