@@ -11,7 +11,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "spec:refresh": "node scripts/refresh-spec.js"
   },
   "keywords": ["watermark", "image", "video", "pdf", "cli", "api"],
   "homepage": "https://api.watermark.ws/docs",
