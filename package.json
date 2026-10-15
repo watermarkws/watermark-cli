@@ -6,7 +6,7 @@
   "bin": {
     "watermark": "bin/watermark.js"
   },
-  "files": ["bin", "src", "README.md", "LICENSE"],
+  "files": ["bin", "src", "README.md", "SKILL.md", "LICENSE"],
   "engines": {
     "node": ">=18"
   },

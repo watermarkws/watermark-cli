@@ -68,6 +68,10 @@ The CLI passes every error code through as the API sends it: `Error 422 validati
 
 Rate limits (429) and server errors are retried twice with the same `Idempotency-Key`, so a retry never runs a request twice.
 
+## For AI agents
+
+`SKILL.md` is an [Agent Skill](https://agentskills.io) for this CLI: when to use it, the commands, the output shape, exit codes and the rules an agent should follow (ask before a big batch, never paste file bytes). Save it as `.claude/skills/watermark/SKILL.md` in a project for Claude Code, or paste it into any agent's instructions. The API's own guide for agents, with its MCP server and plain HTTP, is at https://api.watermark.ws/docs/agents.md.
+
 ## Development
 
 ```bash
