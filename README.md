@@ -12,6 +12,15 @@ npx @watermarkws/cli image process https://example.com/photo.jpg \
 
 Node 18+, no dependencies.
 
+## Install
+
+```bash
+brew install watermarkws/tap/watermark   # Homebrew, macOS and Linux
+npm install -g @watermarkws/cli          # npm
+```
+
+Either way the command is `watermark`. Homebrew brings its own Node; `npx @watermarkws/cli` runs it without installing.
+
 ## Commands
 
 ```
