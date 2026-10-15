@@ -62,7 +62,7 @@
                     "Images"
                 ],
                 "summary": "Process image",
-                "description": "Run operations on an image, in order, and save the result.\n\nPrice: $0.002 per request. Failed requests are free.",
+                "description": "Run operations on an image, in order, and save the result.\n\nPrice: {{price:images/process}} per request. Failed requests are free.",
                 "operationId": "processImage",
                 "parameters": [
                     {
@@ -501,7 +501,7 @@
                     "Images"
                 ],
                 "summary": "Read image",
-                "description": "Read dimensions, format, colorspace and orientation; with `level`, also the angle that would level a tilted horizon (`level_angle`).\n\nPrice: $0.0005 per request. Failed requests are free.",
+                "description": "Read dimensions, format, colorspace and orientation; with `level`, also the angle that would level a tilted horizon (`level_angle`).\n\nPrice: {{price:images/read}} per request. Failed requests are free.",
                 "operationId": "readImage",
                 "parameters": [
                     {
@@ -572,7 +572,7 @@
                     "Images"
                 ],
                 "summary": "Create image",
-                "description": "Start from a blank canvas instead of a source: draw on it with operations such as `text`, and save it as outputs. A font preview is a canvas, a `text` and a `trim`.\n\nPrice: $0.002 per request. Failed requests are free.",
+                "description": "Start from a blank canvas instead of a source: draw on it with operations such as `text`, and save it as outputs. A font preview is a canvas, a `text` and a `trim`.\n\nPrice: {{price:images/create}} per request. Failed requests are free.",
                 "operationId": "createImage",
                 "parameters": [
                     {
@@ -643,7 +643,7 @@
                     "Videos"
                 ],
                 "summary": "Process video",
-                "description": "Run operations on a video, in order, and save an MP4. Reports `progress` while it runs.\n\nPrice: $0.02 per started minute of video (accounts that have bought credits only). Failed requests are free.",
+                "description": "Run operations on a video, in order, and save an MP4. Reports `progress` while it runs. A long video runs on a dedicated worker that takes about a minute to start: the request shows `stage: starting` meanwhile, and a `request.progress` event follows when processing begins.\n\nPrice: {{price:videos/process}} per started minute of video (accounts that have bought credits only). Failed requests are free.",
                 "operationId": "processVideo",
                 "parameters": [
                     {
@@ -839,7 +839,7 @@
                     "Videos"
                 ],
                 "summary": "Read video",
-                "description": "Read dimensions, duration, codec, bitrate and frame rate.\n\nPrice: $0.001 per request (accounts that have bought credits only). Failed requests are free.",
+                "description": "Read dimensions, duration, codec, bitrate and frame rate.\n\nPrice: {{price:videos/read}} per request (accounts that have bought credits only). Failed requests are free.",
                 "operationId": "readVideo",
                 "parameters": [
                     {
@@ -913,7 +913,7 @@
                     "Videos"
                 ],
                 "summary": "Screenshot video",
-                "description": "Save one frame as an image.\n\nPrice: $0.002 per request (accounts that have bought credits only). Failed requests are free.",
+                "description": "Save one frame as an image.\n\nPrice: {{price:videos/screenshot}} per request (accounts that have bought credits only). Failed requests are free.",
                 "operationId": "screenshotVideo",
                 "parameters": [
                     {
@@ -984,7 +984,7 @@
                     "Documents"
                 ],
                 "summary": "Process document",
-                "description": "Run operations on every page of a PDF.\n\nPrice: $0.004 per page. Failed requests are free.",
+                "description": "Run operations on every page of a PDF.\n\nPrice: {{price:documents/process}} per page. Failed requests are free.",
                 "operationId": "processDocument",
                 "parameters": [
                     {
@@ -1073,7 +1073,7 @@
                     "Documents"
                 ],
                 "summary": "Read document",
-                "description": "Read the page count and page size.\n\nPrice: $0.0005 per request. Failed requests are free.",
+                "description": "Read the page count and page size.\n\nPrice: {{price:documents/read}} per request. Failed requests are free.",
                 "operationId": "readDocument",
                 "parameters": [
                     {
@@ -1147,7 +1147,7 @@
                     "Documents"
                 ],
                 "summary": "Snapshot document",
-                "description": "Render one page as an image.\n\nPrice: $0.002 per request. Failed requests are free.",
+                "description": "Render one page as an image.\n\nPrice: {{price:documents/snapshot}} per request. Failed requests are free.",
                 "operationId": "snapshotDocument",
                 "parameters": [
                     {
@@ -4281,12 +4281,6 @@
                                             "title": "Kept by the API",
                                             "additionalProperties": false,
                                             "properties": {
-                                                "retention_days": {
-                                                    "type": "integer",
-                                                    "minimum": 1,
-                                                    "maximum": 30,
-                                                    "description": "How many days the API keeps the file. Defaults to 7; the most is your account's `max_retention_days`."
-                                                },
                                                 "content_disposition": {
                                                     "type": "string",
                                                     "description": "`inline` or `attachment`, optionally with `; filename=\"…\"`: how a browser opening the download link treats the file."
@@ -4523,12 +4517,6 @@
                                             "title": "Kept by the API",
                                             "additionalProperties": false,
                                             "properties": {
-                                                "retention_days": {
-                                                    "type": "integer",
-                                                    "minimum": 1,
-                                                    "maximum": 30,
-                                                    "description": "How many days the API keeps the file. Defaults to 7; the most is your account's `max_retention_days`."
-                                                },
                                                 "content_disposition": {
                                                     "type": "string",
                                                     "description": "`inline` or `attachment`, optionally with `; filename=\"…\"`: how a browser opening the download link treats the file."
@@ -4763,12 +4751,6 @@
                                             "title": "Kept by the API",
                                             "additionalProperties": false,
                                             "properties": {
-                                                "retention_days": {
-                                                    "type": "integer",
-                                                    "minimum": 1,
-                                                    "maximum": 30,
-                                                    "description": "How many days the API keeps the file. Defaults to 7; the most is your account's `max_retention_days`."
-                                                },
                                                 "content_disposition": {
                                                     "type": "string",
                                                     "description": "`inline` or `attachment`, optionally with `; filename=\"…\"`: how a browser opening the download link treats the file."
@@ -5167,12 +5149,6 @@
                                             "title": "Kept by the API",
                                             "additionalProperties": false,
                                             "properties": {
-                                                "retention_days": {
-                                                    "type": "integer",
-                                                    "minimum": 1,
-                                                    "maximum": 30,
-                                                    "description": "How many days the API keeps the file. Defaults to 7; the most is your account's `max_retention_days`."
-                                                },
                                                 "content_disposition": {
                                                     "type": "string",
                                                     "description": "`inline` or `attachment`, optionally with `; filename=\"…\"`: how a browser opening the download link treats the file."
@@ -5389,12 +5365,6 @@
                                             "title": "Kept by the API",
                                             "additionalProperties": false,
                                             "properties": {
-                                                "retention_days": {
-                                                    "type": "integer",
-                                                    "minimum": 1,
-                                                    "maximum": 30,
-                                                    "description": "How many days the API keeps the file. Defaults to 7; the most is your account's `max_retention_days`."
-                                                },
                                                 "content_disposition": {
                                                     "type": "string",
                                                     "description": "`inline` or `attachment`, optionally with `; filename=\"…\"`: how a browser opening the download link treats the file."
@@ -5607,12 +5577,6 @@
                                             "title": "Kept by the API",
                                             "additionalProperties": false,
                                             "properties": {
-                                                "retention_days": {
-                                                    "type": "integer",
-                                                    "minimum": 1,
-                                                    "maximum": 30,
-                                                    "description": "How many days the API keeps the file. Defaults to 7; the most is your account's `max_retention_days`."
-                                                },
                                                 "content_disposition": {
                                                     "type": "string",
                                                     "description": "`inline` or `attachment`, optionally with `; filename=\"…\"`: how a browser opening the download link treats the file."
@@ -5871,7 +5835,7 @@
                             "starting",
                             "processing"
                         ],
-                        "description": "While unfinished: waiting for a worker, waiting for a long-video worker to start, or being worked on."
+                        "description": "While unfinished: waiting for a worker, waiting for a long-video worker to start (about a minute), or being worked on."
                     },
                     "runtime": {
                         "type": "string",
@@ -6351,7 +6315,6 @@
                         "max_source_bytes": 2147483648,
                         "concurrent_requests": 10,
                         "concurrent_extended": 2,
-                        "max_retention_days": 30,
                         "max_operations": 20
                     },
                     "suspended": false,
@@ -6415,10 +6378,6 @@
                             },
                             "max_source_bytes": {
                                 "type": "integer"
-                            },
-                            "max_retention_days": {
-                                "type": "integer",
-                                "description": "The longest an output may ask the API to keep it."
                             },
                             "max_operations": {
                                 "type": "integer",
