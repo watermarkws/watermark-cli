@@ -4,7 +4,7 @@ Watermark, resize and convert images, videos and PDFs from the command line with
 
 ```bash
 export WATERMARK_API_KEY=wm_test_…   # https://watermark.ws/developers
-npx @watermark/cli image process https://example.com/photo.jpg \
+npx @watermarkws/cli image process https://example.com/photo.jpg \
   --op resize:width=1600,height=1600 \
   --op watermark:image_url=https://example.com/logo.png,x=40,y=40 \
   --format webp --out photo.webp
