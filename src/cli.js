@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs';
-import { mkdir, readdir, readFile, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -441,7 +441,7 @@ async function runBatchCreate(api, sources, options, { output, progress, json, f
   return batchExitCode(batch);
 }
 
-async function runBatch(api, action, id, options, { output, progress, json }) {
+async function runBatch(api, action, id, options, { output, progress, json, fetch }) {
   if (!['get', 'requests', 'retry', 'abort'].includes(action) || !BATCH_ID.test(id || '')) {
     throw new UsageError('Usage: watermark batch create <source> ... | get <id> [--wait] | requests <id> [--status failed] | retry <id> | abort <id>');
   }
@@ -459,6 +459,12 @@ async function runBatch(api, action, id, options, { output, progress, json }) {
   if (action === 'get' && options.wait) batch = await waitBatch(api, id, options, progress, json);
   else if (action === 'get') batch = await api.request('GET', `/v1/batches/${id}`);
   else batch = await api.request('POST', `/v1/batches/${id}/${action}`);
+
+  // The zips of a finished batch can be fetched later, or again after a download broke.
+  if (action === 'get' && options.out && BATCH_FINISHED.includes(batch.status) && batch.zips?.length) {
+    const saved = await downloadAll(fetch, batch.zips, options.out, progress);
+    batch = { ...batch, saved_to: saved };
+  }
 
   output(batch, describeBatch);
 
@@ -619,7 +625,17 @@ async function download(fetch, url, path) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Downloading ${basename(path)} failed: HTTP ${response.status}.`);
   await mkdir(dirname(path) || '.', { recursive: true });
-  await pipeline(response.body ? Readable.fromWeb(response.body) : Readable.from([]), createWriteStream(path));
+
+  // Written beside the final name and moved into place at the end, so a cut connection
+  // never leaves a truncated file that looks complete.
+  const part = `${path}.part`;
+  try {
+    await pipeline(response.body ? Readable.fromWeb(response.body) : Readable.from([]), createWriteStream(part));
+    await rename(part, path);
+  } catch (error) {
+    await rm(part, { force: true });
+    throw error;
+  }
 }
 
 // Save every file (a batch's zips) into a directory, named as the API names

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main, parseOperation } from '../src/cli.js';
@@ -445,4 +445,41 @@ test('a design is created, listed, changed and deleted, and --design makes --op 
   const bad = await run(['video', 'process', 'https://example.com/a.mp4', '--design', 'dsn_short'], []);
   assert.equal(bad.code, 2);
   assert.match(bad.err, /--design takes a design id/);
+});
+
+test('batch get --out fetches the zips of a finished batch, and a broken download leaves no file behind', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wm-cli-batch-get-'));
+  try {
+    const zips = [
+      { id: 'file_aaaaaaaaaaaaaaaaaaaaaa', object: 'file', name: 'batch-42-1', format: 'zip', size: 12, files: 2, url: 'https://results.test/42-1.zip?sig=1', url_expires_at: 'soon' },
+      { id: 'file_bbbbbbbbbbbbbbbbbbbbbb', object: 'file', name: 'batch-42-2', format: 'zip', size: 12, files: 1, url: 'https://results.test/42-2.zip?sig=2', url_expires_at: 'soon' },
+    ];
+    const finished = { id: 42, object: 'batch', status: 'succeeded', media: 'image', counts: { total: 3, waiting: 0, running: 0, succeeded: 3, failed: 0, aborted: 0 }, progress: 100, zips };
+
+    const { code, out: printed, calls } = await run(['batch', 'get', '42', '--out', dir], [
+      { body: finished },
+      { body: 'ZIP ONE BYTES' },
+      { body: 'ZIP TWO BYTES' },
+    ]);
+
+    assert.equal(code, 0);
+    assert.equal(calls[0].url, 'https://api.test/v1/batches/42');
+    assert.equal(calls[1].url, 'https://results.test/42-1.zip?sig=1');
+    assert.equal(await readFile(join(dir, 'batch-42-1.zip'), 'utf8'), 'ZIP ONE BYTES');
+    assert.equal(await readFile(join(dir, 'batch-42-2.zip'), 'utf8'), 'ZIP TWO BYTES');
+    assert.match(printed, /Saved to .*batch-42-1\.zip, .*batch-42-2\.zip/);
+
+    // A download that breaks part-way leaves neither the file nor its .part behind.
+    const broken = await run(['batch', 'get', '42', '--out', join(dir, 'again')], [
+      { body: finished },
+      { status: 500, body: 'nope' },
+    ]);
+
+    assert.equal(broken.code, 1);
+    assert.match(broken.err, /Downloading batch-42-1\.zip failed: HTTP 500/);
+    await assert.rejects(stat(join(dir, 'again', 'batch-42-1.zip')));
+    await assert.rejects(stat(join(dir, 'again', 'batch-42-1.zip.part')));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
