@@ -4218,7 +4218,8 @@
                 "description": "Draw text on the image, in a built-in font or your own.",
                 "required": [
                     "type",
-                    "text"
+                    "text",
+                    "size"
                 ],
                 "properties": {
                     "type": {
@@ -4558,7 +4559,8 @@
                 "title": "protect",
                 "description": "Lay fine patterns over the image that make it hard to clean of a watermark.",
                 "required": [
-                    "type"
+                    "type",
+                    "patterns"
                 ],
                 "properties": {
                     "type": {
