@@ -2,7 +2,7 @@
 // retries for 429 (after Retry-After), 5xx and dropped connections, with an
 // Idempotency-Key on every POST so a retried POST never runs twice.
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 
 export class ApiError extends Error {
   constructor(status, error = {}) {
@@ -18,6 +18,9 @@ export class ApiError extends Error {
     this.error = error;
   }
 }
+
+export const REQUEST_FINISHED = ['succeeded', 'failed', 'aborted'];
+export const BATCH_FINISHED = ['succeeded', 'partial', 'failed', 'aborted'];
 
 export class Api {
   constructor({ apiKey, baseUrl = 'https://api.watermark.ws', fetch = globalThis.fetch, sleep, maxRetries = 2 }) {
@@ -71,16 +74,25 @@ export class Api {
   // Wait for a request to be succeeded, failed or aborted. Each call asks the
   // API to hold the response until the request finishes (up to 25 seconds),
   // so the result comes back as soon as it is ready.
-  async wait(id, { timeoutMs = 300_000, intervalMs = 1000, onProgress } = {}) {
+  async wait(id, options = {}) {
+    return this.poll(`/v1/requests/${id}`, REQUEST_FINISHED, `Request ${id}`, options);
+  }
+
+  // Wait for a batch to be succeeded, partial, failed or aborted, the same way.
+  async waitBatch(id, options = {}) {
+    return this.poll(`/v1/batches/${id}`, BATCH_FINISHED, `Batch ${id}`, options);
+  }
+
+  async poll(path, finished, label, { timeoutMs = 300_000, intervalMs = 1000, onProgress } = {}) {
     const started = Date.now();
     for (;;) {
       const hold = Math.max(0, Math.min(25, Math.floor((timeoutMs - (Date.now() - started)) / 1000)));
       const before = Date.now();
-      const request = await this.request('GET', `/v1/requests/${id}`, { query: { wait: hold || undefined } });
-      if (['succeeded', 'failed', 'aborted'].includes(request.status)) return request;
-      if (onProgress) onProgress(request);
+      const current = await this.request('GET', path, { query: { wait: hold || undefined } });
+      if (finished.includes(current.status)) return current;
+      if (onProgress) onProgress(current);
       if (Date.now() - started >= timeoutMs) {
-        throw new Error(`Request ${id} was still ${request.status} after ${Math.round(timeoutMs / 1000)} seconds.`);
+        throw new Error(`${label} was still ${current.status} after ${Math.round(timeoutMs / 1000)} seconds.`);
       }
       if (hold > 0 && Date.now() - before >= (hold - 1) * 1000) continue;
       await this.sleep(intervalMs);

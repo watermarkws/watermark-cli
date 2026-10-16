@@ -4,7 +4,7 @@
         "title": "Watermark API",
         "version": "1.0.0",
         "summary": "Watermark, resize and convert images, videos and PDFs.",
-        "description": "Send a URL and a list of operations; the API processes the file in the background and returns a link to the result.\n\nEvery processing endpoint answers `202` with a request in status `queued`. Poll `GET /v1/requests/{id}` or pass `webhook_url`.\n\n**[See every operation, with the request to send and a picture of the result](https://api.watermark.ws/docs/operations)**\n\nDocs: https://api.watermark.ws/docs · As Markdown, for AI agents: https://api.watermark.ws/llms.txt",
+        "description": "Send a file and a list of operations; the API processes the file in the background and returns a link to the result. Built for jobs a local script does badly: batches of hundreds of files, video, PDF and Word documents that keep their type, HEIC and camera RAW photos, text in real fonts, and delivery straight to your own S3 bucket.\n\nThe file is a public URL, an upload (`POST /v1/uploads`, for a file that is not on the web), a file an earlier request made (`file_…`) or an object in a connected bucket. Never send a file's bytes in a request body.\n\nEvery processing endpoint answers `202` with a request in status `queued`; send `wait` (up to 25 seconds) to get `200` with the finished request when it is quick. Otherwise poll `GET /v1/requests/{id}` or pass `webhook_url`. Download `result.files[0].url`; failed requests are free.\n\nMany files with the same operations go through one `POST /v1/batches`, paced by the account and zipped at the end. `POST /v1/previews` shows what operations will do on one file before you run them. A `design` (`POST /v1/designs`) keeps an operations list, and the logo it uses, on the account for every call after.\n\n**[See every operation, with the request to send and a picture of the result](https://api.watermark.ws/docs/operations)**\n\nDocs: https://api.watermark.ws/docs · For AI agents: https://api.watermark.ws/docs/agents · As Markdown: https://api.watermark.ws/llms.txt",
         "contact": {
             "name": "Watermark support",
             "email": "support@watermark.ws",
@@ -24,15 +24,27 @@
     "tags": [
         {
             "name": "Images",
-            "description": "JPEG, PNG, GIF, WebP, TIFF, BMP, HEIC, AVIF, SVG, PSD and camera RAW in; JPEG, PNG, WebP, GIF, TIFF or BMP out."
+            "description": "Watermark, resize, crop, filter, draw text and convert photos, one or hundreds at a time. JPEG, PNG, GIF, WebP, TIFF, BMP, HEIC, AVIF, SVG, PSD and camera RAW in; JPEG, PNG, WebP, GIF, TIFF or BMP out."
         },
         {
             "name": "Videos",
-            "description": "MP4, MOV, WebM, MKV, AVI, FLV, WMV, MPEG and MPEG-TS in; MP4, MOV, M4V, MKV, WebM, AVI, MPEG, FLV or WMV out. Needs an account that has bought credits."
+            "description": "Watermark every frame, resize, crop, rotate and re-encode, or save one frame as an image. MP4, MOV, WebM, MKV, AVI, FLV, WMV, MPEG and MPEG-TS in; MP4, MOV, M4V, MKV, WebM, AVI, MPEG, FLV or WMV out. Needs an account that has bought credits."
         },
         {
             "name": "Documents",
-            "description": "PDF and Word (DOCX) in; a PDF stays a PDF and a Word file a Word file. Snapshots are images."
+            "description": "Watermark every page, or render one page as an image. PDF and Word (DOCX) in; a PDF stays a PDF and a Word file a Word file. Snapshots are images."
+        },
+        {
+            "name": "Previews",
+            "description": "See what operations will do before running them: one small picture of a photo, a frame of a video or a page of a document, usually made within the call, with where each watermark landed."
+        },
+        {
+            "name": "Batches",
+            "description": "Process many files with one operations list in one call. The files run a few at a time, by position, under the account's `batch_concurrency`; each is an ordinary request, and the results can be zipped or written to a prefix of your bucket."
+        },
+        {
+            "name": "Designs",
+            "description": "An operations list kept on the account under a name, with the logo it uses kept as long as it is. Send its id as `design` on any processing endpoint, a batch or a preview instead of, or before, `operations`."
         },
         {
             "name": "Requests",
@@ -44,11 +56,11 @@
         },
         {
             "name": "Uploads",
-            "description": "Upload a file to the API for a request to read, when it is not on the web."
+            "description": "Upload a file to the API for a request to read, when it is not on the web: a file in your workspace, attached to a chat or on the user's computer."
         },
         {
             "name": "Storage",
-            "description": "Connect a bucket of your own, so requests read from it and write to it."
+            "description": "Connect a bucket of your own, so requests read from it and results are delivered into it instead of through a download link."
         },
         {
             "name": "Account",
@@ -2498,6 +2510,981 @@
                     }
                 }
             }
+        },
+        "/v1/previews": {
+            "post": {
+                "tags": [
+                    "Previews"
+                ],
+                "summary": "Create preview",
+                "description": "One small picture of what operations, or a design, will do to a file: the photo, one frame of a video (`at`) or one page of a document (`page`), reduced to `width` pixels wide, with the operations run on that copy. Pixel arguments are scaled down with it; `anchor`, `margin`, `size` and other percentages need nothing. It waits by default (`wait` 20) and usually runs within the call, so the answer carries the picture: `result.files[0]` is a WebP kept for a day, and `result.data.layout` says where each watermark and text landed, in the preview's pixels, for drawing handles over it.\n\nPrice: {{price:previews}} per request. Failed requests are free.",
+                "operationId": "createPreview",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PreviewRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Finished within `wait`: the preview, with its picture and layout.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Request"
+                                },
+                                "example": {
+                                    "id": 1250,
+                                    "object": "request",
+                                    "endpoint": "previews",
+                                    "status": "succeeded",
+                                    "livemode": true,
+                                    "source": "https://example.com/photo.jpg",
+                                    "runtime": "inline",
+                                    "result": {
+                                        "data": {
+                                            "width": 800,
+                                            "height": 533,
+                                            "scale": 0.888889,
+                                            "layout": [
+                                                {
+                                                    "type": "watermark",
+                                                    "x": 632,
+                                                    "y": 440,
+                                                    "width": 144,
+                                                    "height": 77,
+                                                    "opacity": 60
+                                                }
+                                            ]
+                                        },
+                                        "files": [
+                                            {
+                                                "id": "file_3pQ7rS2tU5vX9yB1cD4eF6",
+                                                "object": "file",
+                                                "name": "preview",
+                                                "format": "webp",
+                                                "size": 31204,
+                                                "data": {
+                                                    "width": 800,
+                                                    "height": 533
+                                                },
+                                                "url": "https://api.watermark.ws/v1/files/file_3pQ7rS2tU5vX9yB1cD4eF6/content?expires=1792422004&signature=…",
+                                                "url_expires_at": "2026-10-17T15:00:04Z",
+                                                "deleted_at": "2026-10-17T15:00:04Z",
+                                                "created_at": "2026-10-16T15:00:04Z"
+                                            }
+                                        ],
+                                        "deleted_at": "2026-10-17T15:00:04Z"
+                                    },
+                                    "price": {
+                                        "amount": "0.000500",
+                                        "currency": "usd",
+                                        "micro_usd": 500
+                                    },
+                                    "created_at": "2026-10-16T15:00:03Z",
+                                    "completed_at": "2026-10-16T15:00:04Z"
+                                }
+                            }
+                        }
+                    },
+                    "202": {
+                        "description": "Not finished within `wait` (or `wait` was 0): follow it with `GET /v1/requests/{id}`.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Request"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/401"
+                    },
+                    "402": {
+                        "$ref": "#/components/responses/402"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/404"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/422"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/429"
+                    }
+                }
+            }
+        },
+        "/v1/batches": {
+            "post": {
+                "tags": [
+                    "Batches"
+                ],
+                "summary": "Create batch",
+                "description": "Run one operations list, or a design, on many files. Every source is checked and the whole batch priced before it is accepted: a prepaid account must hold the estimate (files × the endpoint's price, × outputs), and a test key counts each file toward its requests a day. The files then run as ordinary requests, `batch_concurrency` at a time by position, charged as each succeeds; they do not count against `concurrent_requests`. When the last one is done the hold is released, the results are zipped into parts of at most 4 GB or 1,000 files if `zip` was sent, and `batch.finished` is posted to `webhook_url`.\n\nPrice: each file costs its media's process price (`images/process`, `videos/process` or `documents/process`), and each further output the price of processing an image. Failed and aborted files are free.",
+                "operationId": "createBatch",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/BatchCreateRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Accepted: the batch, `queued`, with its counts and the estimate it holds.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Batch"
+                                },
+                                "example": {
+                                    "id": 42,
+                                    "object": "batch",
+                                    "status": "queued",
+                                    "media": "image",
+                                    "livemode": true,
+                                    "counts": {
+                                        "total": 240,
+                                        "waiting": 240,
+                                        "running": 0,
+                                        "succeeded": 0,
+                                        "failed": 0,
+                                        "aborted": 0
+                                    },
+                                    "progress": 0,
+                                    "input": {
+                                        "design": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                                        "output": {
+                                            "format": "webp"
+                                        },
+                                        "zip": true
+                                    },
+                                    "price": {
+                                        "amount": "0.000000",
+                                        "currency": "usd",
+                                        "micro_usd": 0,
+                                        "estimate_micro_usd": 480000
+                                    },
+                                    "requests": "https://api.watermark.ws/v1/batches/42/requests",
+                                    "customer": "shop-42",
+                                    "created_at": "2026-10-16T09:00:00Z"
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "The batch first sent with this Idempotency-Key (header `Idempotent-Replayed: true`).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Batch"
+                                },
+                                "example": {
+                                    "id": 42,
+                                    "object": "batch",
+                                    "status": "processing",
+                                    "media": "image",
+                                    "livemode": true,
+                                    "counts": {
+                                        "total": 240,
+                                        "waiting": 180,
+                                        "running": 20,
+                                        "succeeded": 39,
+                                        "failed": 1,
+                                        "aborted": 0
+                                    },
+                                    "progress": 16,
+                                    "input": {
+                                        "design": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                                        "output": {
+                                            "format": "webp"
+                                        },
+                                        "zip": true
+                                    },
+                                    "price": {
+                                        "amount": "0.078000",
+                                        "currency": "usd",
+                                        "micro_usd": 78000,
+                                        "estimate_micro_usd": 480000
+                                    },
+                                    "requests": "https://api.watermark.ws/v1/batches/42/requests",
+                                    "customer": "shop-42",
+                                    "created_at": "2026-10-16T09:00:00Z"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/401"
+                    },
+                    "402": {
+                        "$ref": "#/components/responses/402"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/403"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/404"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/422"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/429"
+                    }
+                }
+            },
+            "get": {
+                "tags": [
+                    "Batches"
+                ],
+                "summary": "List batches",
+                "description": "The account's batches, newest first.",
+                "operationId": "listBatches",
+                "parameters": [
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "How many batches to return.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20
+                        },
+                        "example": 20
+                    },
+                    {
+                        "name": "before",
+                        "in": "query",
+                        "description": "Only batches older than this id. Pass the last id of a page to get the next one.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Only batches in this status.",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "queued",
+                                "processing",
+                                "zipping",
+                                "succeeded",
+                                "partial",
+                                "failed",
+                                "aborted"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "A page of batches.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BatchList"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/401"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/422"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/429"
+                    }
+                }
+            }
+        },
+        "/v1/batches/{id}": {
+            "get": {
+                "tags": [
+                    "Batches"
+                ],
+                "summary": "Get batch",
+                "description": "One batch, with its counts, `progress` and, once finished with `zip`, its `zips`. With `wait`, the answer comes when the batch finishes or the wait runs out, so a script can follow a batch without polling.",
+                "operationId": "getBatch",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "description": "The batch's id.",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 42
+                    },
+                    {
+                        "name": "wait",
+                        "in": "query",
+                        "description": "Seconds to wait for the batch to finish before answering.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 25,
+                            "default": 0
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The batch.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Batch"
+                                },
+                                "example": {
+                                    "id": 42,
+                                    "object": "batch",
+                                    "status": "succeeded",
+                                    "media": "image",
+                                    "livemode": true,
+                                    "counts": {
+                                        "total": 240,
+                                        "waiting": 0,
+                                        "running": 0,
+                                        "succeeded": 240,
+                                        "failed": 0,
+                                        "aborted": 0
+                                    },
+                                    "progress": 100,
+                                    "input": {
+                                        "design": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                                        "output": {
+                                            "format": "webp"
+                                        },
+                                        "zip": true
+                                    },
+                                    "price": {
+                                        "amount": "0.480000",
+                                        "currency": "usd",
+                                        "micro_usd": 480000
+                                    },
+                                    "zips": [
+                                        {
+                                            "id": "file_9rA2bC4dE6fG8hJ0kL1mN3",
+                                            "object": "file",
+                                            "name": "batch-42-1",
+                                            "format": "zip",
+                                            "size": 43912877,
+                                            "url": "https://api.watermark.ws/v1/files/file_9rA2bC4dE6fG8hJ0kL1mN3/content?expires=1792735604&signature=…",
+                                            "url_expires_at": "2026-10-23T09:06:44Z",
+                                            "deleted_at": "2026-10-23T09:06:44Z",
+                                            "created_at": "2026-10-16T09:06:44Z",
+                                            "files": 240
+                                        }
+                                    ],
+                                    "requests": "https://api.watermark.ws/v1/batches/42/requests",
+                                    "customer": "shop-42",
+                                    "created_at": "2026-10-16T09:00:00Z",
+                                    "completed_at": "2026-10-16T09:06:44Z"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/401"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/404"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/422"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/429"
+                    }
+                }
+            }
+        },
+        "/v1/batches/{id}/requests": {
+            "get": {
+                "tags": [
+                    "Batches"
+                ],
+                "summary": "List batch requests",
+                "description": "The batch's files as requests, by `position`: each with its status, its result or its error. Filter by `status` to find the failed ones; page with `after`.",
+                "operationId": "listBatchRequests",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "description": "The batch's id.",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 42
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Only requests in this status.",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "waiting",
+                                "queued",
+                                "processing",
+                                "succeeded",
+                                "failed",
+                                "aborted"
+                            ]
+                        },
+                        "example": "failed"
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "How many requests to return.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 50
+                        }
+                    },
+                    {
+                        "name": "after",
+                        "in": "query",
+                        "description": "Only requests after this `position`. Pass the last position of a page to get the next one.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "A page of the batch's requests, in position order.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RequestList"
+                                },
+                                "example": {
+                                    "object": "list",
+                                    "data": [
+                                        {
+                                            "id": 1301,
+                                            "object": "request",
+                                            "endpoint": "images/process",
+                                            "status": "failed",
+                                            "livemode": true,
+                                            "source": "https://example.com/photos/IMG_4472.jpg",
+                                            "batch": 42,
+                                            "position": 1,
+                                            "error": {
+                                                "code": "source_unreachable",
+                                                "message": "The source could not be downloaded: 404 Not Found.",
+                                                "retryable": true
+                                            },
+                                            "created_at": "2026-10-16T09:00:01Z",
+                                            "completed_at": "2026-10-16T09:00:06Z"
+                                        }
+                                    ],
+                                    "has_more": false
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/401"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/404"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/422"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/429"
+                    }
+                }
+            }
+        },
+        "/v1/batches/{id}/retry": {
+            "post": {
+                "tags": [
+                    "Batches"
+                ],
+                "summary": "Retry batch",
+                "description": "Run the failed files of a finished batch again, as new requests at the same positions. The batch goes back to `processing`; its zips are built again when it finishes. A batch still running is a `409 batch_not_finished`; one with no failed file a `409 nothing_to_retry`.",
+                "operationId": "retryBatch",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "description": "The batch's id.",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 42
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "The batch, `processing` again.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Batch"
+                                },
+                                "example": {
+                                    "id": 42,
+                                    "object": "batch",
+                                    "status": "processing",
+                                    "media": "image",
+                                    "livemode": true,
+                                    "counts": {
+                                        "total": 240,
+                                        "waiting": 0,
+                                        "running": 1,
+                                        "succeeded": 239,
+                                        "failed": 0,
+                                        "aborted": 0
+                                    },
+                                    "progress": 99,
+                                    "input": {
+                                        "design": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                                        "output": {
+                                            "format": "webp"
+                                        },
+                                        "zip": true
+                                    },
+                                    "price": {
+                                        "amount": "0.478000",
+                                        "currency": "usd",
+                                        "micro_usd": 478000,
+                                        "estimate_micro_usd": 480000
+                                    },
+                                    "requests": "https://api.watermark.ws/v1/batches/42/requests",
+                                    "customer": "shop-42",
+                                    "created_at": "2026-10-16T09:00:00Z"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/401"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/404"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/409"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/429"
+                    }
+                }
+            }
+        },
+        "/v1/batches/{id}/abort": {
+            "post": {
+                "tags": [
+                    "Batches"
+                ],
+                "summary": "Abort batch",
+                "description": "Stop a batch: files still waiting never run and running ones are aborted, none of them charged; files already done keep their results. A finished batch is a `409 batch_finished`.",
+                "operationId": "abortBatch",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "description": "The batch's id.",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 42
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The aborted batch.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Batch"
+                                },
+                                "example": {
+                                    "id": 42,
+                                    "object": "batch",
+                                    "status": "aborted",
+                                    "media": "image",
+                                    "livemode": true,
+                                    "counts": {
+                                        "total": 240,
+                                        "waiting": 0,
+                                        "running": 0,
+                                        "succeeded": 39,
+                                        "failed": 1,
+                                        "aborted": 200
+                                    },
+                                    "progress": 100,
+                                    "input": {
+                                        "design": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                                        "output": {
+                                            "format": "webp"
+                                        },
+                                        "zip": true
+                                    },
+                                    "price": {
+                                        "amount": "0.078000",
+                                        "currency": "usd",
+                                        "micro_usd": 78000
+                                    },
+                                    "requests": "https://api.watermark.ws/v1/batches/42/requests",
+                                    "customer": "shop-42",
+                                    "created_at": "2026-10-16T09:00:00Z",
+                                    "completed_at": "2026-10-16T09:06:44Z"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/401"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/404"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/409"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/429"
+                    }
+                }
+            }
+        },
+        "/v1/designs": {
+            "get": {
+                "tags": [
+                    "Designs"
+                ],
+                "summary": "List designs",
+                "description": "The account's designs, newest first.",
+                "operationId": "listDesigns",
+                "parameters": [
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "How many designs to return.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20
+                        },
+                        "example": 20
+                    },
+                    {
+                        "name": "before",
+                        "in": "query",
+                        "description": "Only designs made before this one. Pass the last id of a page to get the next one.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^dsn_[A-Za-z0-9]{22}$"
+                        },
+                        "example": "dsn_4Kq9mZt2Rb7xWc1nPl8yVe"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "A page of designs.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DesignList"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/401"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/422"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/429"
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Designs"
+                ],
+                "summary": "Create design",
+                "description": "Keep an operations list under a name. The operations are checked as a request's would be, for the design's `media` (`any` is checked as an image). A watermark whose `image` is an upload (`upl_…`) or a file (`file_…`) is copied into an asset of the design, which lasts as long as the design does, and the operation then names the asset; an `image_url` stays a URL. An account may keep `max_designs` (`422 too_many_designs` past that). Needs the `designs` scope; using a design needs only `process`.",
+                "operationId": "createDesign",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DesignCreateRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "The design, with its assets.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Design"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/403"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/404"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/422"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/429"
+                    }
+                }
+            }
+        },
+        "/v1/designs/{id}": {
+            "get": {
+                "tags": [
+                    "Designs"
+                ],
+                "summary": "Get design",
+                "description": "One design.",
+                "operationId": "getDesign",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "description": "The design's id.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^dsn_[A-Za-z0-9]{22}$"
+                        },
+                        "example": "dsn_4hT9kLm2PqR7sV1wX3yZ5a"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The design.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Design"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/401"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/404"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/429"
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "Designs"
+                ],
+                "summary": "Change design",
+                "description": "Change the name, the media or the operations; what is left out stays. New operations are checked for the media as on create. An upload or file they name becomes an asset, and an asset no operation names any more is deleted. Requests already running keep the operations they started with.",
+                "operationId": "updateDesign",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "description": "The design's id.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^dsn_[A-Za-z0-9]{22}$"
+                        },
+                        "example": "dsn_4hT9kLm2PqR7sV1wX3yZ5a"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DesignUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The changed design.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Design"
+                                },
+                                "example": {
+                                    "id": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                                    "object": "design",
+                                    "name": "Studio corner logo, lighter",
+                                    "media": "any",
+                                    "livemode": true,
+                                    "operations": [
+                                        {
+                                            "type": "watermark",
+                                            "image": "file_6dM3nP8qR1sT4uV7wX0yZ2",
+                                            "anchor": "bottom_right",
+                                            "margin": "3%",
+                                            "size": "18%",
+                                            "opacity": 45
+                                        }
+                                    ],
+                                    "assets": [
+                                        {
+                                            "id": "file_6dM3nP8qR1sT4uV7wX0yZ2",
+                                            "format": "png",
+                                            "size": 48213
+                                        }
+                                    ],
+                                    "created_at": "2026-10-16T08:00:00Z",
+                                    "updated_at": "2026-10-16T10:30:00Z"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/401"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/404"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/422"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/429"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Designs"
+                ],
+                "summary": "Delete design",
+                "description": "Delete a design and the assets it kept. Requests that named it keep running; new ones get a `404 design_not_found`.",
+                "operationId": "deleteDesign",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "description": "The design's id.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^dsn_[A-Za-z0-9]{22}$"
+                        },
+                        "example": "dsn_4hT9kLm2PqR7sV1wX3yZ5a"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The design, with `deleted_at`.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Design"
+                                },
+                                "example": {
+                                    "id": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                                    "object": "design",
+                                    "name": "Studio corner logo",
+                                    "media": "any",
+                                    "livemode": true,
+                                    "operations": [
+                                        {
+                                            "type": "watermark",
+                                            "image": "file_6dM3nP8qR1sT4uV7wX0yZ2",
+                                            "anchor": "bottom_right",
+                                            "margin": "3%",
+                                            "size": "18%",
+                                            "opacity": 60
+                                        }
+                                    ],
+                                    "assets": [
+                                        {
+                                            "id": "file_6dM3nP8qR1sT4uV7wX0yZ2",
+                                            "format": "png",
+                                            "size": 48213
+                                        }
+                                    ],
+                                    "created_at": "2026-10-16T08:00:00Z",
+                                    "updated_at": "2026-10-16T08:00:00Z",
+                                    "deleted_at": "2026-10-20T08:00:00Z"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/401"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/404"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/429"
+                    }
+                }
+            }
         }
     },
     "webhooks": {
@@ -2569,6 +3556,48 @@
                 "summary": "request.progress",
                 "operationId": "requestProgress",
                 "description": "A request moved on while it runs: `progress`, `stage` or `runtime` changed. Only when the request asked for it in `events`; at most one every 2 seconds, and only once progress moved 5 points. Signed in the `Watermark-Signature` header: `t=<unix time>,v1=<HMAC-SHA256 of \"<t>.<body>\" with your webhook secret>`.",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Event"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "2XX": {
+                        "description": "Received. Anything else is retried 3 times."
+                    }
+                }
+            }
+        },
+        "batch.finished": {
+            "post": {
+                "summary": "batch.finished",
+                "operationId": "batchFinished",
+                "description": "A batch finished: `succeeded`, `partial`, `failed` or `aborted`, with its counts, its price and, when asked for, its zips. The files of a batch send no events of their own unless the batch set `request_events`. Signed in the `Watermark-Signature` header: `t=<unix time>,v1=<HMAC-SHA256 of \"<t>.<body>\" with your webhook secret>`.",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Event"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "2XX": {
+                        "description": "Received. Anything else is retried 3 times."
+                    }
+                }
+            }
+        },
+        "batch.progress": {
+            "post": {
+                "summary": "batch.progress",
+                "operationId": "batchProgress",
+                "description": "A batch's files moved on: sent every 5% of files finished, when the batch asked for it in `events`. Signed in the `Watermark-Signature` header: `t=<unix time>,v1=<HMAC-SHA256 of \"<t>.<body>\" with your webhook secret>`.",
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -2850,11 +3879,9 @@
             "ImageOperationWatermark": {
                 "type": "object",
                 "title": "watermark",
-                "description": "Place an image (a logo, usually a transparent PNG) over the file, at its own size. Resize the watermark image beforehand.",
+                "description": "Place an image (a logo, usually a transparent PNG) over the file. Say where with `anchor` and `margin`, or with `x` and `y` in pixels; `size`, `opacity` and `rotation` prepare the image on the way.",
                 "required": [
-                    "type",
-                    "x",
-                    "y"
+                    "type"
                 ],
                 "properties": {
                     "type": {
@@ -2879,8 +3906,74 @@
                         ],
                         "description": "The watermark image as a file an earlier request made (`file_…`) or an object in your connected bucket. Send this or `image_url`."
                     },
+                    "anchor": {
+                        "description": "Where the watermark sits: top_left, top, top_right, left, center, right, bottom_left, bottom, bottom_right. Send this or `x` and `y`.",
+                        "type": "string",
+                        "enum": [
+                            "top_left",
+                            "top",
+                            "top_right",
+                            "left",
+                            "center",
+                            "right",
+                            "bottom_left",
+                            "bottom",
+                            "bottom_right"
+                        ]
+                    },
+                    "margin": {
+                        "oneOf": [
+                            {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^\\d+(\\.\\d+)?%$"
+                            }
+                        ],
+                        "description": "How far in from the anchored edges: pixels, or a percentage of the shorter side (\"3%\")."
+                    },
+                    "size": {
+                        "oneOf": [
+                            {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^\\d+(\\.\\d+)?%$"
+                            }
+                        ],
+                        "description": "The watermark's width: pixels, or a percentage of the file's width (\"18%\"); the height follows. Left out, it goes on at its own size."
+                    },
+                    "opacity": {
+                        "description": "Opacity of the watermark, 0-100; 100 leaves it as it is.",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100
+                    },
+                    "rotation": {
+                        "description": "Turn the watermark by degrees, clockwise.",
+                        "type": "integer",
+                        "minimum": -360,
+                        "maximum": 360
+                    },
+                    "tile_spacing": {
+                        "oneOf": [
+                            {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^\\d+(\\.\\d+)?%$"
+                            }
+                        ],
+                        "description": "Repeat the watermark across the whole file, starting at the top-left margin: the step from one copy to the next, pixels or a percentage of the width (\"25%\")."
+                    },
                     "x": {
-                        "description": "The x position in pixels, from the top left.",
+                        "description": "The x position in pixels, from the top left. Send `anchor` instead to place it relative to the file.",
                         "type": "integer",
                         "minimum": -65535,
                         "maximum": 65535
@@ -3125,8 +4218,7 @@
                 "description": "Draw text on the image, in a built-in font or your own.",
                 "required": [
                     "type",
-                    "text",
-                    "size"
+                    "text"
                 ],
                 "properties": {
                     "type": {
@@ -3139,10 +4231,30 @@
                         "maxLength": 500
                     },
                     "size": {
-                        "description": "The font size in pixels.",
-                        "type": "integer",
-                        "minimum": 4,
-                        "maximum": 2000
+                        "oneOf": [
+                            {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^\\d+(\\.\\d+)?%$"
+                            }
+                        ],
+                        "description": "The font size: pixels, or a percentage of the image's width (\"4%\")."
+                    },
+                    "margin": {
+                        "oneOf": [
+                            {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^\\d+(\\.\\d+)?%$"
+                            }
+                        ],
+                        "description": "How far in from the anchored edges: pixels, or a percentage of the shorter side (\"2%\"). Added to x and y."
                     },
                     "color": {
                         "description": "The text color. A hex color, such as \"#ffffff\" or \"#fff\".",
@@ -3976,11 +5088,9 @@
             "VideoOperationWatermark": {
                 "type": "object",
                 "title": "watermark",
-                "description": "Place an image (a logo, usually a transparent PNG) over the file, at its own size. Resize the watermark image beforehand.",
+                "description": "Place an image (a logo, usually a transparent PNG) over the file. Say where with `anchor` and `margin`, or with `x` and `y` in pixels; `size`, `opacity` and `rotation` prepare the image on the way.",
                 "required": [
-                    "type",
-                    "x",
-                    "y"
+                    "type"
                 ],
                 "properties": {
                     "type": {
@@ -4005,8 +5115,74 @@
                         ],
                         "description": "The watermark image as a file an earlier request made (`file_…`) or an object in your connected bucket. Send this or `image_url`."
                     },
+                    "anchor": {
+                        "description": "Where the watermark sits: top_left, top, top_right, left, center, right, bottom_left, bottom, bottom_right. Send this or `x` and `y`.",
+                        "type": "string",
+                        "enum": [
+                            "top_left",
+                            "top",
+                            "top_right",
+                            "left",
+                            "center",
+                            "right",
+                            "bottom_left",
+                            "bottom",
+                            "bottom_right"
+                        ]
+                    },
+                    "margin": {
+                        "oneOf": [
+                            {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^\\d+(\\.\\d+)?%$"
+                            }
+                        ],
+                        "description": "How far in from the anchored edges: pixels, or a percentage of the shorter side (\"3%\")."
+                    },
+                    "size": {
+                        "oneOf": [
+                            {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^\\d+(\\.\\d+)?%$"
+                            }
+                        ],
+                        "description": "The watermark's width: pixels, or a percentage of the file's width (\"18%\"); the height follows. Left out, it goes on at its own size."
+                    },
+                    "opacity": {
+                        "description": "Opacity of the watermark, 0-100; 100 leaves it as it is.",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100
+                    },
+                    "rotation": {
+                        "description": "Turn the watermark by degrees, clockwise.",
+                        "type": "integer",
+                        "minimum": -360,
+                        "maximum": 360
+                    },
+                    "tile_spacing": {
+                        "oneOf": [
+                            {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^\\d+(\\.\\d+)?%$"
+                            }
+                        ],
+                        "description": "Repeat the watermark across the whole file, starting at the top-left margin: the step from one copy to the next, pixels or a percentage of the width (\"25%\")."
+                    },
                     "x": {
-                        "description": "The x position in pixels, from the top left.",
+                        "description": "The x position in pixels, from the top left. Send `anchor` instead to place it relative to the file.",
                         "type": "integer",
                         "minimum": -65535,
                         "maximum": 65535
@@ -4086,9 +5262,7 @@
                 "title": "watermark",
                 "description": "Place an image over every page.",
                 "required": [
-                    "type",
-                    "x",
-                    "y"
+                    "type"
                 ],
                 "properties": {
                     "type": {
@@ -4113,8 +5287,74 @@
                         ],
                         "description": "The watermark image as a file an earlier request made (`file_…`) or an object in your connected bucket. Send this or `image_url`."
                     },
+                    "anchor": {
+                        "description": "Where the watermark sits: top_left, top, top_right, left, center, right, bottom_left, bottom, bottom_right. Send this or `x` and `y`.",
+                        "type": "string",
+                        "enum": [
+                            "top_left",
+                            "top",
+                            "top_right",
+                            "left",
+                            "center",
+                            "right",
+                            "bottom_left",
+                            "bottom",
+                            "bottom_right"
+                        ]
+                    },
+                    "margin": {
+                        "oneOf": [
+                            {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^\\d+(\\.\\d+)?%$"
+                            }
+                        ],
+                        "description": "How far in from the anchored edges: pixels, or a percentage of the shorter side (\"3%\")."
+                    },
+                    "size": {
+                        "oneOf": [
+                            {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^\\d+(\\.\\d+)?%$"
+                            }
+                        ],
+                        "description": "The watermark's width: pixels, or a percentage of the file's width (\"18%\"); the height follows. Left out, it goes on at its own size."
+                    },
+                    "opacity": {
+                        "description": "Opacity of the watermark, 0-100; 100 leaves it as it is.",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100
+                    },
+                    "rotation": {
+                        "description": "Turn the watermark by degrees, clockwise.",
+                        "type": "integer",
+                        "minimum": -360,
+                        "maximum": 360
+                    },
+                    "tile_spacing": {
+                        "oneOf": [
+                            {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^\\d+(\\.\\d+)?%$"
+                            }
+                        ],
+                        "description": "Repeat the watermark across the whole file, starting at the top-left margin: the step from one copy to the next, pixels or a percentage of the width (\"25%\")."
+                    },
                     "x": {
-                        "description": "The x position in pixels, from the top left.",
+                        "description": "The x position in pixels, from the top left. Send `anchor` instead to place it relative to the file.",
                         "type": "integer",
                         "minimum": -65535,
                         "maximum": 65535
@@ -4221,8 +5461,13 @@
                             }
                         ]
                     },
+                    "design": {
+                        "type": "string",
+                        "pattern": "^dsn_[A-Za-z0-9]{22}$",
+                        "description": "A design to run first (`dsn_…`, from `POST /v1/designs`): its operations, then the request's own, if any. A design made for another media is a `422 design_media_mismatch`. See [Designs](https://api.watermark.ws/docs/designs.md)."
+                    },
                     "operations": {
-                        "description": "Required, unless `outputs` is sent: then it may be empty and each output have its own.",
+                        "description": "Required, unless `design` or `outputs` is sent: then it may be left out, and each output may have its own.",
                         "type": "array",
                         "minItems": 1,
                         "maxItems": 20,
@@ -4423,8 +5668,7 @@
             "VideoProcessRequest": {
                 "type": "object",
                 "required": [
-                    "source",
-                    "operations"
+                    "source"
                 ],
                 "example": {
                     "source": "https://example.com/clip.mp4",
@@ -4463,14 +5707,19 @@
                             }
                         ]
                     },
+                    "design": {
+                        "type": "string",
+                        "pattern": "^dsn_[A-Za-z0-9]{22}$",
+                        "description": "A design to run first (`dsn_…`, from `POST /v1/designs`): its operations, then the request's own, if any. A design made for another media is a `422 design_media_mismatch`. See [Designs](https://api.watermark.ws/docs/designs.md)."
+                    },
                     "operations": {
+                        "description": "Required, unless `design` is sent.",
                         "type": "array",
                         "minItems": 1,
                         "maxItems": 20,
                         "items": {
                             "$ref": "#/components/schemas/VideoOperation"
-                        },
-                        "description": "Run in order, top to bottom. Each is `{\"type\": …}` plus that operation's parameters. See [Operations](https://api.watermark.ws/docs/operations.md)."
+                        }
                     },
                     "outputs": {
                         "type": "array",
@@ -4668,8 +5917,7 @@
             "DocumentProcessRequest": {
                 "type": "object",
                 "required": [
-                    "source",
-                    "operations"
+                    "source"
                 ],
                 "example": {
                     "source": "https://example.com/contract.pdf",
@@ -4709,14 +5957,19 @@
                             }
                         ]
                     },
+                    "design": {
+                        "type": "string",
+                        "pattern": "^dsn_[A-Za-z0-9]{22}$",
+                        "description": "A design to run first (`dsn_…`, from `POST /v1/designs`): its operations, then the request's own, if any. A design made for another media is a `422 design_media_mismatch`. See [Designs](https://api.watermark.ws/docs/designs.md)."
+                    },
                     "operations": {
+                        "description": "Required, unless `design` is sent.",
                         "type": "array",
                         "minItems": 1,
                         "maxItems": 20,
                         "items": {
                             "$ref": "#/components/schemas/DocumentOperation"
-                        },
-                        "description": "Run in order, top to bottom. Each is `{\"type\": …}` plus that operation's parameters. See [Operations](https://api.watermark.ws/docs/operations.md)."
+                        }
                     },
                     "outputs": {
                         "type": "array",
@@ -5044,8 +6297,7 @@
                 "type": "object",
                 "required": [
                     "width",
-                    "height",
-                    "operations"
+                    "height"
                 ],
                 "example": {
                     "width": 1200,
@@ -5089,14 +6341,19 @@
                         "default": "transparent",
                         "description": "`transparent` or a hex color."
                     },
+                    "design": {
+                        "type": "string",
+                        "pattern": "^dsn_[A-Za-z0-9]{22}$",
+                        "description": "A design to run first (`dsn_…`, from `POST /v1/designs`): its operations, then the request's own, if any. A design made for another media is a `422 design_media_mismatch`. See [Designs](https://api.watermark.ws/docs/designs.md)."
+                    },
                     "operations": {
                         "minItems": 0,
+                        "description": "What to draw on the canvas. Required, unless `design` is sent. Run in order, top to bottom. See [Operations](https://api.watermark.ws/docs/operations.md).",
                         "type": "array",
                         "maxItems": 20,
                         "items": {
                             "$ref": "#/components/schemas/ImageOperation"
-                        },
-                        "description": "Run in order, top to bottom. Each is `{\"type\": …}` plus that operation's parameters. See [Operations](https://api.watermark.ws/docs/operations.md)."
+                        }
                     },
                     "outputs": {
                         "type": "array",
@@ -5712,6 +6969,966 @@
                     }
                 }
             },
+            "PreviewRequest": {
+                "type": "object",
+                "required": [
+                    "source"
+                ],
+                "example": {
+                    "source": "https://example.com/photo.jpg",
+                    "operations": [
+                        {
+                            "type": "watermark",
+                            "image_url": "https://example.com/logo.png",
+                            "anchor": "bottom_right",
+                            "margin": "3%",
+                            "size": "18%",
+                            "opacity": 60
+                        }
+                    ],
+                    "width": 800
+                },
+                "properties": {
+                    "source": {
+                        "description": "The file: a public `http` or `https` URL, a file an earlier request made (`file_…`), or an object in your connected bucket. See [Sources](https://api.watermark.ws/docs/files.md#sources).",
+                        "oneOf": [
+                            {
+                                "type": "string",
+                                "format": "uri",
+                                "maxLength": 2048,
+                                "description": "A URL."
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^file_[A-Za-z0-9]{22}$",
+                                "description": "A file id."
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^upl_[A-Za-z0-9]{22}$",
+                                "description": "An upload id: used once, by the first request that succeeds."
+                            },
+                            {
+                                "$ref": "#/components/schemas/StorageObject"
+                            }
+                        ]
+                    },
+                    "media": {
+                        "type": "string",
+                        "enum": [
+                            "image",
+                            "video",
+                            "document"
+                        ],
+                        "default": "image",
+                        "description": "What the source is, which decides the operations allowed and how the picture is taken."
+                    },
+                    "design": {
+                        "type": "string",
+                        "pattern": "^dsn_[A-Za-z0-9]{22}$",
+                        "description": "A design to run first (`dsn_…`, from `POST /v1/designs`): its operations, then the request's own, if any. A design made for another media is a `422 design_media_mismatch`. See [Designs](https://api.watermark.ws/docs/designs.md)."
+                    },
+                    "operations": {
+                        "description": "The operations to show, for the `media`. Required, unless `design` is sent.",
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "items": {
+                            "description": "An operation of the media in question; `type` picks which.",
+                            "oneOf": [
+                                {
+                                    "$ref": "#/components/schemas/ImageOperation"
+                                },
+                                {
+                                    "$ref": "#/components/schemas/VideoOperation"
+                                },
+                                {
+                                    "$ref": "#/components/schemas/DocumentOperation"
+                                }
+                            ]
+                        }
+                    },
+                    "width": {
+                        "type": "integer",
+                        "minimum": 64,
+                        "maximum": 1600,
+                        "default": 1024,
+                        "description": "The preview's width in pixels; the height follows the source. A source narrower than this is not enlarged."
+                    },
+                    "at": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 86400,
+                        "default": 0,
+                        "description": "Videos: which moment to show, in seconds."
+                    },
+                    "page": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1999,
+                        "default": 0,
+                        "description": "Documents: which page to show, counting from 0."
+                    },
+                    "wait": {
+                        "default": 20,
+                        "description": "Seconds to wait for the preview in this response; a preview usually runs within the call. Send `0` to get the request back at once and follow it.",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 25
+                    },
+                    "webhook_url": {
+                        "type": "string",
+                        "format": "uri",
+                        "maxLength": 1024,
+                        "description": "Where to post the request when it finishes. Defaults to the account's webhook, if set. See [Webhooks](https://api.watermark.ws/docs/webhooks.md)."
+                    },
+                    "customer": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "description": "Your own reference for who the request is for. Returned with it, and totalled by `GET /v1/usage?group_by=customer`."
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "maxProperties": 20,
+                        "additionalProperties": {
+                            "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                            ],
+                            "maxLength": 255
+                        },
+                        "description": "Up to 20 keys of your own, returned with the request and in its webhooks."
+                    },
+                    "events": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "request.succeeded",
+                                "request.failed",
+                                "request.aborted",
+                                "request.progress"
+                            ]
+                        },
+                        "description": "The webhook events to send. Defaults to the three finishing ones; add `request.progress` for progress while it runs. See [Webhooks](https://api.watermark.ws/docs/webhooks.md)."
+                    }
+                }
+            },
+            "StoragePrefix": {
+                "type": "object",
+                "required": [
+                    "storage",
+                    "prefix"
+                ],
+                "description": "Every object under a prefix of your bucket, through a storage connection that may read. The prefix is listed when the batch is accepted.",
+                "properties": {
+                    "storage": {
+                        "type": "string",
+                        "description": "A verified storage connection (`stg_…`)."
+                    },
+                    "prefix": {
+                        "type": "string",
+                        "maxLength": 900,
+                        "description": "A key prefix ending in `/`, under one of the connection's prefixes."
+                    }
+                },
+                "example": {
+                    "storage": "stg_7a",
+                    "prefix": "photos/shoot-2026-10/"
+                }
+            },
+            "BatchCreateRequest": {
+                "type": "object",
+                "required": [
+                    "sources"
+                ],
+                "example": {
+                    "sources": [
+                        "https://example.com/photos/IMG_4471.jpg",
+                        "https://example.com/photos/IMG_4472.jpg",
+                        {
+                            "storage": "stg_7a",
+                            "prefix": "photos/shoot-2026-10/"
+                        }
+                    ],
+                    "operations": [
+                        {
+                            "type": "resize",
+                            "width": 1600,
+                            "height": 1600
+                        },
+                        {
+                            "type": "watermark",
+                            "image_url": "https://example.com/logo.png",
+                            "anchor": "bottom_right",
+                            "margin": "3%",
+                            "size": "18%",
+                            "opacity": 60
+                        }
+                    ],
+                    "output": {
+                        "format": "webp"
+                    },
+                    "zip": true,
+                    "webhook_url": "https://example.com/hooks/watermark",
+                    "customer": "shop-42"
+                },
+                "properties": {
+                    "media": {
+                        "type": "string",
+                        "enum": [
+                            "image",
+                            "video",
+                            "document"
+                        ],
+                        "default": "image",
+                        "description": "What every source is. Video needs an account that has bought credits."
+                    },
+                    "sources": {
+                        "type": "array",
+                        "minItems": 1,
+                        "description": "The files, at most your account's `batch_max_files` (`422 batch_too_large` past that): each a public URL, an upload, a file an earlier request made, an object in your bucket, or every object under a prefix of it. See [Sources](https://api.watermark.ws/docs/files.md#sources).",
+                        "items": {
+                            "oneOf": [
+                                {
+                                    "type": "string",
+                                    "format": "uri",
+                                    "maxLength": 2048,
+                                    "description": "A URL."
+                                },
+                                {
+                                    "type": "string",
+                                    "pattern": "^file_[A-Za-z0-9]{22}$",
+                                    "description": "A file id."
+                                },
+                                {
+                                    "type": "string",
+                                    "pattern": "^upl_[A-Za-z0-9]{22}$",
+                                    "description": "An upload id."
+                                },
+                                {
+                                    "$ref": "#/components/schemas/StorageObject"
+                                },
+                                {
+                                    "$ref": "#/components/schemas/StoragePrefix"
+                                }
+                            ]
+                        }
+                    },
+                    "design": {
+                        "type": "string",
+                        "pattern": "^dsn_[A-Za-z0-9]{22}$",
+                        "description": "A design to run first (`dsn_…`, from `POST /v1/designs`): its operations, then the request's own, if any. A design made for another media is a `422 design_media_mismatch`. See [Designs](https://api.watermark.ws/docs/designs.md)."
+                    },
+                    "operations": {
+                        "description": "Run on every file, for the `media`. Required, unless `design` is sent.",
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "items": {
+                            "description": "An operation of the media in question; `type` picks which.",
+                            "oneOf": [
+                                {
+                                    "$ref": "#/components/schemas/ImageOperation"
+                                },
+                                {
+                                    "$ref": "#/components/schemas/VideoOperation"
+                                },
+                                {
+                                    "$ref": "#/components/schemas/DocumentOperation"
+                                }
+                            ]
+                        }
+                    },
+                    "output": {
+                        "type": "object",
+                        "description": "How to save each result: the same as one output named `result`.",
+                        "additionalProperties": false,
+                        "properties": {
+                            "format": {
+                                "type": "string",
+                                "description": "A format of the `media`, such as `webp`, `mp4` or `pdf`; the media's first format when left out. See [Operations](https://api.watermark.ws/docs/operations.md)."
+                            }
+                        }
+                    },
+                    "outputs": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 10,
+                        "description": "Several files per source, as on a single request, each costing the price of processing an image after the first. No output may have a `destination` of its own: the batch's `destination` holds every file.",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "name"
+                            ],
+                            "additionalProperties": false,
+                            "properties": {
+                                "name": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9_-]{1,32}$",
+                                    "description": "Your name for it, unique in the batch, such as `web` or `thumb`; part of each file's name."
+                                },
+                                "format": {
+                                    "type": "string",
+                                    "description": "A format of the `media`."
+                                },
+                                "quality": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 100,
+                                    "description": "Images: compression quality, 1-100."
+                                },
+                                "operations": {
+                                    "type": "array",
+                                    "maxItems": 20,
+                                    "items": {
+                                        "description": "An operation of the media in question; `type` picks which.",
+                                        "oneOf": [
+                                            {
+                                                "$ref": "#/components/schemas/ImageOperation"
+                                            },
+                                            {
+                                                "$ref": "#/components/schemas/VideoOperation"
+                                            },
+                                            {
+                                                "$ref": "#/components/schemas/DocumentOperation"
+                                            }
+                                        ]
+                                    },
+                                    "description": "Run after the shared operations, for this output only."
+                                }
+                            }
+                        }
+                    },
+                    "destination": {
+                        "type": "object",
+                        "required": [
+                            "storage",
+                            "prefix"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Write every file into your bucket instead of keeping it: `prefix` + the source's name (+ `-` + the output's name, with `outputs`) + `.` + the format. Accounts that have bought credits only; not with `zip`.",
+                        "properties": {
+                            "storage": {
+                                "type": "string",
+                                "description": "A verified storage connection that may write (`stg_…`)."
+                            },
+                            "prefix": {
+                                "type": "string",
+                                "maxLength": 900,
+                                "description": "A key prefix ending in `/`, under one of the connection's prefixes."
+                            }
+                        }
+                    },
+                    "zip": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Also zip the results when the batch finishes, in parts of at most 4 GB or 1,000 files each, listed in `zips`. Not with `destination`."
+                    },
+                    "max_duration": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 86400,
+                        "description": "Videos: only keep the first this many seconds of each."
+                    },
+                    "max_pages": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 2000,
+                        "description": "Documents: only keep the first this many pages of each."
+                    },
+                    "webhook_url": {
+                        "description": "Where to post the batch when it finishes (`batch.finished`), and its progress if asked for. Defaults to the account's webhook, if set. See [Webhooks](https://api.watermark.ws/docs/webhooks.md).",
+                        "type": "string",
+                        "format": "uri",
+                        "maxLength": 1024
+                    },
+                    "events": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "batch.finished",
+                                "batch.progress"
+                            ]
+                        },
+                        "default": [
+                            "batch.finished"
+                        ],
+                        "description": "The batch events to post: `batch.finished` when it is done, `batch.progress` every 5% of files finished."
+                    },
+                    "request_events": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "request.succeeded",
+                                "request.failed",
+                                "request.aborted",
+                                "request.progress"
+                            ]
+                        },
+                        "description": "Events to post for each file as well, as single requests send them. None by default: the files of a batch are quiet."
+                    },
+                    "customer": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "description": "Your own reference, kept on the batch and on each of its requests."
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "maxProperties": 20,
+                        "additionalProperties": {
+                            "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                            ],
+                            "maxLength": 255
+                        },
+                        "description": "Up to 20 keys of your own, kept on the batch and on each of its requests."
+                    }
+                }
+            },
+            "Batch": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "object",
+                    "status",
+                    "media",
+                    "livemode",
+                    "counts",
+                    "progress",
+                    "created_at"
+                ],
+                "example": {
+                    "id": 42,
+                    "object": "batch",
+                    "status": "processing",
+                    "media": "image",
+                    "livemode": true,
+                    "counts": {
+                        "total": 240,
+                        "waiting": 180,
+                        "running": 20,
+                        "succeeded": 39,
+                        "failed": 1,
+                        "aborted": 0
+                    },
+                    "progress": 16,
+                    "input": {
+                        "design": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                        "output": {
+                            "format": "webp"
+                        },
+                        "zip": true
+                    },
+                    "price": {
+                        "amount": "0.078000",
+                        "currency": "usd",
+                        "micro_usd": 78000,
+                        "estimate_micro_usd": 480000
+                    },
+                    "requests": "https://api.watermark.ws/v1/batches/42/requests",
+                    "customer": "shop-42",
+                    "created_at": "2026-10-16T09:00:00Z"
+                },
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "The batch's id."
+                    },
+                    "object": {
+                        "type": "string",
+                        "const": "batch",
+                        "description": "Always `batch`."
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "queued",
+                            "processing",
+                            "zipping",
+                            "succeeded",
+                            "partial",
+                            "failed",
+                            "aborted"
+                        ],
+                        "description": "`queued` until its files are created, `processing` while they run, `zipping` while the zips are written; then `succeeded` (every file did), `partial` (some failed or were aborted), `failed` (none succeeded) or `aborted`."
+                    },
+                    "media": {
+                        "type": "string",
+                        "enum": [
+                            "image",
+                            "video",
+                            "document"
+                        ],
+                        "description": "What the files are."
+                    },
+                    "livemode": {
+                        "type": "boolean",
+                        "description": "`false` for a test key's batch."
+                    },
+                    "counts": {
+                        "type": "object",
+                        "description": "How many files are where.",
+                        "properties": {
+                            "total": {
+                                "type": "integer",
+                                "description": "Every file of the batch."
+                            },
+                            "waiting": {
+                                "type": "integer",
+                                "description": "Not let go yet."
+                            },
+                            "running": {
+                                "type": "integer",
+                                "description": "Queued or processing."
+                            },
+                            "succeeded": {
+                                "type": "integer",
+                                "description": "Done, with a result."
+                            },
+                            "failed": {
+                                "type": "integer",
+                                "description": "Done, without one."
+                            },
+                            "aborted": {
+                                "type": "integer",
+                                "description": "Stopped by an abort."
+                            }
+                        }
+                    },
+                    "progress": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "description": "Files finished, as a percentage of `counts.total`."
+                    },
+                    "input": {
+                        "type": "object",
+                        "description": "What was sent: the design, the operations, the output, the destination, `max_duration`, `max_pages` and `zip`, those that were.",
+                        "properties": {
+                            "design": {
+                                "type": "string",
+                                "description": "The design's id, when one was sent."
+                            },
+                            "operations": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object"
+                                },
+                                "description": "The operations as sent."
+                            },
+                            "output": {
+                                "type": "object",
+                                "description": "As sent."
+                            },
+                            "destination": {
+                                "type": "object",
+                                "description": "The `storage` and `prefix`, when the files go to your bucket."
+                            },
+                            "max_duration": {
+                                "type": "integer",
+                                "description": "As sent."
+                            },
+                            "max_pages": {
+                                "type": "integer",
+                                "description": "As sent."
+                            },
+                            "zip": {
+                                "type": "boolean",
+                                "description": "Whether the results are zipped."
+                            }
+                        }
+                    },
+                    "price": {
+                        "description": "What the batch has cost so far: each file is charged as it succeeds. Until it finishes, `estimate_micro_usd` is what the whole batch would cost, which a prepaid account holds.",
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/Money"
+                            }
+                        ],
+                        "properties": {
+                            "estimate_micro_usd": {
+                                "type": "integer",
+                                "description": "While unfinished: the estimate held for the batch, in millionths of a dollar."
+                            }
+                        }
+                    },
+                    "zips": {
+                        "type": "array",
+                        "description": "Once a batch sent with `zip` has finished: the zip parts, each a file with a download link and `files`, how many results it holds. Kept 7 days, like the results.",
+                        "items": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/components/schemas/File"
+                                }
+                            ],
+                            "properties": {
+                                "files": {
+                                    "type": "integer",
+                                    "description": "How many files the part holds."
+                                }
+                            }
+                        }
+                    },
+                    "requests": {
+                        "type": "string",
+                        "format": "uri",
+                        "description": "Where to list the batch's files as requests: `GET /v1/batches/{id}/requests`."
+                    },
+                    "error": {
+                        "type": "object",
+                        "description": "When the batch itself went wrong, apart from its files: `code` and `message`, such as a zip that could not be built.",
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "description": "Stable; branch on it."
+                            },
+                            "message": {
+                                "type": "string",
+                                "description": "For people."
+                            }
+                        }
+                    },
+                    "customer": {
+                        "type": "string",
+                        "description": "As sent."
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "description": "As sent."
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "When the batch was accepted."
+                    },
+                    "completed_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "When it finished."
+                    }
+                }
+            },
+            "BatchList": {
+                "type": "object",
+                "example": {
+                    "object": "list",
+                    "data": [
+                        {
+                            "id": 42,
+                            "object": "batch",
+                            "status": "succeeded",
+                            "media": "image",
+                            "livemode": true,
+                            "counts": {
+                                "total": 240,
+                                "waiting": 0,
+                                "running": 0,
+                                "succeeded": 240,
+                                "failed": 0,
+                                "aborted": 0
+                            },
+                            "progress": 100,
+                            "created_at": "2026-10-16T09:00:00Z",
+                            "completed_at": "2026-10-16T09:06:44Z"
+                        }
+                    ],
+                    "has_more": false
+                },
+                "properties": {
+                    "object": {
+                        "type": "string",
+                        "const": "list"
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Batch"
+                        }
+                    },
+                    "has_more": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "DesignCreateRequest": {
+                "type": "object",
+                "required": [
+                    "name",
+                    "operations"
+                ],
+                "example": {
+                    "name": "Studio corner logo",
+                    "operations": [
+                        {
+                            "type": "watermark",
+                            "image": "upl_9f3Tq1LmA2bC4dE6fG8hJ0",
+                            "anchor": "bottom_right",
+                            "margin": "3%",
+                            "size": "18%",
+                            "opacity": 60
+                        }
+                    ]
+                },
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 120,
+                        "description": "A name for people."
+                    },
+                    "media": {
+                        "type": "string",
+                        "enum": [
+                            "image",
+                            "video",
+                            "document",
+                            "any"
+                        ],
+                        "default": "any",
+                        "description": "What the design is for. `any` suits every endpoint, so its operations must be ones every media takes, such as `watermark`."
+                    },
+                    "operations": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "items": {
+                            "description": "An operation of the media in question; `type` picks which.",
+                            "oneOf": [
+                                {
+                                    "$ref": "#/components/schemas/ImageOperation"
+                                },
+                                {
+                                    "$ref": "#/components/schemas/VideoOperation"
+                                },
+                                {
+                                    "$ref": "#/components/schemas/DocumentOperation"
+                                }
+                            ]
+                        },
+                        "description": "The operations, as a request sends them. A watermark's `image` may be an upload (`upl_…`) or a file (`file_…`): it is copied into an asset the design keeps, and the stored operation names the asset. See [Operations](https://api.watermark.ws/docs/operations.md)."
+                    }
+                }
+            },
+            "DesignUpdateRequest": {
+                "type": "object",
+                "description": "At least one of these.",
+                "example": {
+                    "name": "Studio corner logo, lighter",
+                    "operations": [
+                        {
+                            "type": "watermark",
+                            "image": "file_6dM3nP8qR1sT4uV7wX0yZ2",
+                            "anchor": "bottom_right",
+                            "margin": "3%",
+                            "size": "18%",
+                            "opacity": 45
+                        }
+                    ]
+                },
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 120,
+                        "description": "A new name."
+                    },
+                    "media": {
+                        "type": "string",
+                        "enum": [
+                            "image",
+                            "video",
+                            "document",
+                            "any"
+                        ],
+                        "description": "What the design is for; its operations must suit it."
+                    },
+                    "operations": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "items": {
+                            "description": "An operation of the media in question; `type` picks which.",
+                            "oneOf": [
+                                {
+                                    "$ref": "#/components/schemas/ImageOperation"
+                                },
+                                {
+                                    "$ref": "#/components/schemas/VideoOperation"
+                                },
+                                {
+                                    "$ref": "#/components/schemas/DocumentOperation"
+                                }
+                            ]
+                        },
+                        "description": "The whole new list. Name an existing asset by its `file_…` id to keep it; an asset no operation names is deleted."
+                    }
+                }
+            },
+            "Design": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "object",
+                    "name",
+                    "media",
+                    "livemode",
+                    "operations",
+                    "assets",
+                    "created_at",
+                    "updated_at"
+                ],
+                "example": {
+                    "id": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                    "object": "design",
+                    "name": "Studio corner logo",
+                    "media": "any",
+                    "livemode": true,
+                    "operations": [
+                        {
+                            "type": "watermark",
+                            "image": "file_6dM3nP8qR1sT4uV7wX0yZ2",
+                            "anchor": "bottom_right",
+                            "margin": "3%",
+                            "size": "18%",
+                            "opacity": 60
+                        }
+                    ],
+                    "assets": [
+                        {
+                            "id": "file_6dM3nP8qR1sT4uV7wX0yZ2",
+                            "format": "png",
+                            "size": 48213
+                        }
+                    ],
+                    "created_at": "2026-10-16T08:00:00Z",
+                    "updated_at": "2026-10-16T08:00:00Z"
+                },
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Starts `dsn_`. Send it as `design` on a processing endpoint, a batch or a preview."
+                    },
+                    "object": {
+                        "type": "string",
+                        "const": "design",
+                        "description": "Always `design`."
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "As sent."
+                    },
+                    "media": {
+                        "type": "string",
+                        "enum": [
+                            "image",
+                            "video",
+                            "document",
+                            "any"
+                        ],
+                        "description": "What the design is for."
+                    },
+                    "livemode": {
+                        "type": "boolean",
+                        "description": "`false` for a design made with a test key."
+                    },
+                    "operations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object"
+                        },
+                        "description": "The operations as kept: an upload or file sent as a watermark's `image` has become the id of one of `assets`."
+                    },
+                    "assets": {
+                        "type": "array",
+                        "description": "The files the design keeps, for as long as it exists.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "Starts `file_`."
+                                },
+                                "format": {
+                                    "type": "string",
+                                    "description": "Such as `png`."
+                                },
+                                "size": {
+                                    "type": "integer",
+                                    "description": "Bytes."
+                                }
+                            }
+                        }
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "deleted_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Once deleted."
+                    }
+                }
+            },
+            "DesignList": {
+                "type": "object",
+                "example": {
+                    "object": "list",
+                    "data": [
+                        {
+                            "id": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                            "object": "design",
+                            "name": "Studio corner logo",
+                            "media": "any",
+                            "livemode": true,
+                            "operations": [
+                                {
+                                    "type": "watermark",
+                                    "image": "file_6dM3nP8qR1sT4uV7wX0yZ2",
+                                    "anchor": "bottom_right",
+                                    "margin": "3%",
+                                    "size": "18%",
+                                    "opacity": 60
+                                }
+                            ],
+                            "assets": [
+                                {
+                                    "id": "file_6dM3nP8qR1sT4uV7wX0yZ2",
+                                    "format": "png",
+                                    "size": 48213
+                                }
+                            ],
+                            "created_at": "2026-10-16T08:00:00Z",
+                            "updated_at": "2026-10-16T08:00:00Z"
+                        }
+                    ],
+                    "has_more": false
+                },
+                "properties": {
+                    "object": {
+                        "type": "string",
+                        "const": "list"
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Design"
+                        }
+                    },
+                    "has_more": {
+                        "type": "boolean"
+                    }
+                }
+            },
             "Request": {
                 "type": "object",
                 "required": [
@@ -5802,20 +8019,22 @@
                     "endpoint": {
                         "type": "string",
                         "examples": [
-                            "images/process"
+                            "images/process",
+                            "previews"
                         ],
-                        "description": "Which endpoint started it, such as `images/process`."
+                        "description": "Which endpoint started it, such as `images/process`; `previews` for a preview."
                     },
                     "status": {
                         "type": "string",
                         "enum": [
+                            "waiting",
                             "queued",
                             "processing",
                             "succeeded",
                             "failed",
                             "aborted"
                         ],
-                        "description": "Where the request is. Only `succeeded` is charged."
+                        "description": "Where the request is. Only `succeeded` is charged. `waiting` is a file of a batch that has not been let go yet."
                     },
                     "livemode": {
                         "type": "boolean",
@@ -5824,6 +8043,14 @@
                     "source": {
                         "description": "The source as sent: a URL, a file id, or a storage object."
                     },
+                    "batch": {
+                        "type": "integer",
+                        "description": "For a file of a batch: the batch's id."
+                    },
+                    "position": {
+                        "type": "integer",
+                        "description": "For a file of a batch: its place in `sources`, from 0."
+                    },
                     "input": {
                         "type": "object",
                         "description": "What was sent besides the source: operations, output and the endpoint's own fields."
@@ -5831,11 +8058,12 @@
                     "stage": {
                         "type": "string",
                         "enum": [
+                            "waiting",
                             "queued",
                             "starting",
                             "processing"
                         ],
-                        "description": "While unfinished: waiting for a worker, waiting for a long-video worker to start (about a minute), or being worked on."
+                        "description": "While unfinished: waiting its turn in a batch, waiting for a worker, waiting for a long-video worker to start (about a minute), or being worked on."
                     },
                     "runtime": {
                         "type": "string",
@@ -6315,7 +8543,10 @@
                         "max_source_bytes": 2147483648,
                         "concurrent_requests": 10,
                         "concurrent_extended": 2,
-                        "max_operations": 20
+                        "max_operations": 20,
+                        "batch_max_files": 5000,
+                        "batch_concurrency": 20,
+                        "max_designs": 200
                     },
                     "suspended": false,
                     "created_at": "2026-10-11T14:52:10Z"
@@ -6383,9 +8614,21 @@
                                 "type": "integer",
                                 "description": "The most operations one request, or one output, may list."
                             },
+                            "batch_max_files": {
+                                "type": "integer",
+                                "description": "The most files one batch may hold."
+                            },
+                            "batch_concurrency": {
+                                "type": "integer",
+                                "description": "How many files of the account's batches run at once, apart from `concurrent_requests`."
+                            },
+                            "max_designs": {
+                                "type": "integer",
+                                "description": "How many designs the account may keep."
+                            },
                             "requests_per_day": {
                                 "type": "integer",
-                                "description": "Test keys only."
+                                "description": "Test keys only. A batch's files each count as one."
                             }
                         }
                     },
@@ -6498,7 +8741,9 @@
                             "request.succeeded",
                             "request.failed",
                             "request.aborted",
-                            "request.progress"
+                            "request.progress",
+                            "batch.finished",
+                            "batch.progress"
                         ],
                         "description": "What happened."
                     },
@@ -6507,7 +8752,15 @@
                         "description": "Unix time."
                     },
                     "data": {
-                        "$ref": "#/components/schemas/Request"
+                        "description": "The request as `GET /v1/requests/{id}` returns it; for a `batch.*` event, the batch as `GET /v1/batches/{id}` returns it.",
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/Request"
+                            },
+                            {
+                                "$ref": "#/components/schemas/Batch"
+                            }
+                        ]
                     }
                 }
             },
@@ -6587,7 +8840,17 @@
                 }
             },
             "402": {
-                "description": "No credit left, or the endpoint needs an account that has paid.",
+                "description": "No credit left, or not enough for the whole batch, or the endpoint needs an account that has paid.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            },
+            "403": {
+                "description": "Not allowed: the key lacks the scope, the account is suspended or may not use the feature, or the storage connection may not read or write there.",
                 "content": {
                     "application/json": {
                         "schema": {
@@ -6607,7 +8870,7 @@
                 }
             },
             "409": {
-                "description": "A conflict: the request has finished, or the Idempotency-Key was used for another request.",
+                "description": "A conflict: the request or batch has finished, there is nothing to retry, or the Idempotency-Key was used for another request.",
                 "content": {
                     "application/json": {
                         "schema": {

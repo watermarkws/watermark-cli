@@ -31,7 +31,13 @@ watermark video process <source> --op <operation> [--max-duration 30] [--out fil
 watermark video read <source> | watermark video screenshot <source> --seconds 5
 watermark document process <source> --op <operation> [--max-pages 10] [--out file]
 watermark document read <source> | watermark document snapshot <source> --page 1
-watermark request get <id> | watermark request abort <id>
+watermark preview <source> [--media image|video|document] [--at 5] [--page 0] [--width 1024] [--design <dsn_id>] [--op ...] [--out preview.webp]
+watermark batch create <source> [<source> ...] [--media image|video|document] [--design <dsn_id>] [--op ...] [--format webp] [--zip|--no-zip] [--destination stg_7a:done/] [--max-duration 30] [--max-pages 10] [--out dir]
+watermark batch get <id> [--wait] | watermark batch requests <id> [--status failed] [--after <position>] [--limit 50] | watermark batch retry <id> | watermark batch abort <id>
+watermark batches [--limit 20] [--before <id>] [--status failed]
+watermark design create --name <name> [--media image|video|document|any] --op <operation> [--op ...]
+watermark design update <dsn_id> [--name <name>] [--media <media>] [--op ...] | watermark design get|delete <dsn_id> | watermark designs [--limit 20] [--before <dsn_id>]
+watermark request get <id> [--wait] | watermark request abort <id>
 watermark requests [--before <id>] | watermark account | watermark usage --group-by endpoint [--customer <id>]
 watermark upload photo.heic | watermark upload get|delete <upl_id>
 watermark file get|delete <file_id>
@@ -44,26 +50,44 @@ watermark operations image
 
 Processing commands wait for the request to finish (up to `--timeout`, default 300 seconds) unless `--no-wait` is given; `--out` downloads the result.
 
-Operations run in order: `--op type:param=value,param=value`, or all at once with `--ops-json '[{"type":"resize","width":800,"height":600}]'`. `watermark operations` lists them all.
+Operations run in order: `--op type:param=value,param=value`, or all at once with `--ops-json '[{"type":"resize","width":800,"height":600}]'`. `watermark operations` lists them all. A `watermark` operation is placed by `anchor`, `margin` and `size` as percentages of the file (`anchor=bottom_right,margin=3%,size=18%`), which lands the same on every size of file, or by `x` and `y` in pixels; percentages pass through as text.
+
+`--design <dsn_id>` runs a saved design's operations first, on `process`, `create`, `preview` and `batch create`; `--op` is then optional. `watermark design create` keeps an operations list, and the logo it names, under a name on the account.
+
+`watermark preview` makes one small WebP of what the operations do to a file (a frame of a video with `--at`, a page of a document with `--page`), usually within the call.
+
+`watermark batch create` runs the same operations on many files in one call. A source that is a local file or folder is uploaded first (a folder means every file in it, sorted; four uploads at a time), `stg_7a:folder/` means every object under that prefix, and URLs and ids pass through. The command waits (up to `--timeout`, default 3600 seconds for a batch) and prints the counts as they move; `--out <dir>` asks for the results as zips (`--zip`) and downloads them into that directory; `--destination stg_7a:done/` writes each file into your bucket instead. With `--no-wait` the accepted batch is printed with `price.estimate_micro_usd`, and `watermark batch get <id> --wait` follows it later. `watermark batch requests <id> --status failed` lists the files that failed; `watermark batch retry <id>` runs them again.
 
 More than one file from a request, each with its own operations and format: `--outputs-json '[{"name":"large","format":"webp"},{"name":"thumb","operations":[{"type":"resize","width":200,"height":200}]}]'`.
 
-Other options: `--webhook <url>`, `--event <type>` (repeatable, such as `request.progress`), `--customer <id>`, `--metadata key=value`, `--idempotency-key <key>`, `--json`, `--api-key`, `--base-url` (or `WATERMARK_API_URL`).
+Other options: `--webhook <url>`, `--event <type>` (repeatable, such as `request.progress` or `batch.progress`), `--request-event <type>` (for a batch: the `request.*` events to post for each file), `--customer <id>`, `--metadata key=value`, `--idempotency-key <key>`, `--json`, `--api-key`, `--base-url` (or `WATERMARK_API_URL`).
 
 A source is a public http(s) URL, a local file (uploaded first), an upload
 (`upl_…`), a file an earlier request kept (`file_…`), or an object in a
-connected bucket (`stg_7a:path/to/key`).
+connected bucket (`stg_7a:path/to/key`). A batch also takes a local folder and
+`stg_7a:folder/` (every object under the prefix; note the trailing slash).
 
 ## Errors
 
-The CLI passes every error code through as the API sends it: `Error 422 validation_failed: …`, with every invalid field below it, or with `--json` the whole error object (`type`, `code`, `message`, `param`, `request_id`, `errors`, and the `permissions_policy` a storage change whose check failed needs). The codes are listed at https://api.watermark.ws/docs/errors.md.
+The CLI passes every error code through as the API sends it: `Error 422 validation_failed: …`, with every invalid field below it, or with `--json` the whole error object (`type`, `code`, `message`, `param`, `request_id`, `errors`, and the `permissions_policy` a storage change whose check failed needs). The codes are listed at https://api.watermark.ws/docs/errors.md. Batches and designs add these:
+
+- `batch_too_large` (422): more files than the account's `batch_max_files`, a listed prefix included.
+- `empty_source_list` (422): the sources named no file.
+- `batch_not_found` (404): no such batch on the account.
+- `batch_not_finished` (409): a retry of a batch that is still running.
+- `nothing_to_retry` (409): a retry of a batch with no failed file.
+- `batch_finished` (409): an abort of a batch that is already done.
+- `design_not_found` (404): no such design on the account, or it was deleted.
+- `design_media_mismatch` (422): a design made for another media.
+- `too_many_designs` (422): the account already keeps `max_designs`.
+- `upload_in_use` (409): an upload a request or design has already taken.
 
 ## Exit codes
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Succeeded (or queued, with `--no-wait`). |
-| 1 | The API refused the call, or the request failed or was aborted. The error code is printed. |
+| 0 | Succeeded, or every file of the batch did (or queued, with `--no-wait`). |
+| 1 | The API refused the call, or the request or batch failed or was aborted, or the batch finished `partial`. The error code is printed. |
 | 2 | The command was used wrongly. |
 
 Rate limits (429) and server errors are retried twice with the same `Idempotency-Key`, so a retry never runs a request twice.

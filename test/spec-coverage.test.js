@@ -24,10 +24,12 @@ const SPEC = JSON.parse(BYTES.toString('utf8'));
 const URL_SOURCE = 'https://example.com/a.jpg';
 const FILE_ID = 'file_2kqV7PzM1aT4hQ0bR9sX3c';
 const UPLOAD_ID = 'upl_2kqV7PzM1aT4hQ0bR9sX3c';
+const DESIGN_ID = 'dsn_4hT9kLm2PqR7sV1wX3yZ5a';
 const COMMON = ['--webhook', 'https://example.com/hook', '--event', 'request.progress', '--customer', 'c1', '--metadata', 'k=v', '--idempotency-key', 'k1', '--json'];
 const OUTPUTS = ['--outputs-json', '[{"name":"large"}]'];
 const NO_WAIT = [...COMMON, '--no-wait'];
 const WAIT = 'The CLI waits by polling GET /v1/requests/{id}?wait=…, which also covers requests that run longer than the 25 seconds the wait parameter allows.';
+const PREVIEW_WAIT = 'Left out, the API holds a preview for 20 seconds, its default; the CLI then polls GET /v1/requests/{id}?wait=… for one that takes longer.';
 const LINK = 'link';
 
 // Every operation in the spec and the commands that call it. Each run's
@@ -35,17 +37,29 @@ const LINK = 'link';
 // query parameter the spec lists, unless "allow" names it with the reason it
 // is left out.
 const COVERAGE = {
-  'POST /v1/images/process': { runs: [['image', 'process', URL_SOURCE, '--op', 'grayscale', '--format', 'webp', ...NO_WAIT], ['image', 'process', URL_SOURCE, '--op', 'grayscale', ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
+  'POST /v1/images/process': { runs: [['image', 'process', URL_SOURCE, '--op', 'grayscale', '--format', 'webp', ...NO_WAIT], ['image', 'process', URL_SOURCE, '--design', DESIGN_ID, ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
   'POST /v1/images/read': { runs: [['image', 'read', URL_SOURCE, '--level', ...NO_WAIT]], allow: { wait: WAIT } },
-  'POST /v1/images/create': { runs: [['image', 'create', '--width', '10', '--height', '10', '--background', '#ffffff', '--op', 'text:text=Hi', '--format', 'png', ...NO_WAIT], ['image', 'create', '--width', '10', '--height', '10', '--op', 'text:text=Hi', ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
-  'POST /v1/videos/process': { runs: [['video', 'process', URL_SOURCE, '--op', 'grayscale', '--max-duration', '5', '--format', 'mp4', ...NO_WAIT], ['video', 'process', URL_SOURCE, '--op', 'grayscale', ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
+  'POST /v1/images/create': { runs: [['image', 'create', '--width', '10', '--height', '10', '--background', '#ffffff', '--op', 'text:text=Hi', '--format', 'png', ...NO_WAIT], ['image', 'create', '--width', '10', '--height', '10', '--design', DESIGN_ID, ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
+  'POST /v1/videos/process': { runs: [['video', 'process', URL_SOURCE, '--op', 'grayscale', '--max-duration', '5', '--format', 'mp4', ...NO_WAIT], ['video', 'process', URL_SOURCE, '--design', DESIGN_ID, ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
   'POST /v1/videos/read': { runs: [['video', 'read', URL_SOURCE, ...NO_WAIT]], allow: { wait: WAIT } },
   'POST /v1/videos/screenshot': { runs: [['video', 'screenshot', URL_SOURCE, '--seconds', '1', '--format', 'png', ...NO_WAIT], ['video', 'screenshot', URL_SOURCE, '--seconds', '1', ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
-  'POST /v1/documents/process': { runs: [['document', 'process', URL_SOURCE, '--op', 'grayscale', '--max-pages', '2', ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
+  'POST /v1/documents/process': { runs: [['document', 'process', URL_SOURCE, '--op', 'grayscale', '--max-pages', '2', ...OUTPUTS, ...NO_WAIT], ['document', 'process', URL_SOURCE, '--design', DESIGN_ID, ...NO_WAIT]], allow: { wait: WAIT } },
+  'POST /v1/previews': { runs: [['preview', URL_SOURCE, '--media', 'image', '--design', DESIGN_ID, '--op', 'grayscale', '--width', '800', '--at', '1', '--page', '0', ...COMMON]], allow: { wait: PREVIEW_WAIT } },
+  'POST /v1/batches': { runs: [['batch', 'create', URL_SOURCE, 'stg_7a:in/', '--media', 'image', '--design', DESIGN_ID, '--op', 'grayscale', '--format', 'webp', '--zip', '--max-duration', '5', '--max-pages', '2', '--request-event', 'request.failed', ...NO_WAIT], ['batch', 'create', URL_SOURCE, '--op', 'grayscale', ...OUTPUTS, '--destination', 'stg_7a:done/', ...NO_WAIT]] },
+  'GET /v1/batches': { runs: [['batches', '--limit', '5', '--before', '10', '--status', 'failed', '--json']] },
+  'GET /v1/batches/{id}': { runs: [['batch', 'get', '42', '--wait', '--json']] },
+  'GET /v1/batches/{id}/requests': { runs: [['batch', 'requests', '42', '--status', 'failed', '--after', '10', '--limit', '5', '--json']] },
+  'POST /v1/batches/{id}/retry': { runs: [['batch', 'retry', '42', '--json']] },
+  'POST /v1/batches/{id}/abort': { runs: [['batch', 'abort', '42', '--json']] },
+  'GET /v1/designs': { runs: [['designs', '--limit', '5', '--before', DESIGN_ID, '--json']] },
+  'POST /v1/designs': { runs: [['design', 'create', '--name', 'Corner logo', '--media', 'image', '--op', 'grayscale', '--json']] },
+  'GET /v1/designs/{id}': { runs: [['design', 'get', DESIGN_ID, '--json']] },
+  'PATCH /v1/designs/{id}': { runs: [['design', 'update', DESIGN_ID, '--name', 'Corner logo', '--media', 'image', '--op', 'grayscale', '--json']] },
+  'DELETE /v1/designs/{id}': { runs: [['design', 'delete', DESIGN_ID, '--json']] },
   'POST /v1/documents/read': { runs: [['document', 'read', URL_SOURCE, ...NO_WAIT]], allow: { wait: WAIT } },
   'POST /v1/documents/snapshot': { runs: [['document', 'snapshot', URL_SOURCE, '--page', '1', '--format', 'png', ...NO_WAIT], ['document', 'snapshot', URL_SOURCE, ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
   'GET /v1/requests': { runs: [['requests', '--limit', '5', '--before', '10', '--json']] },
-  'GET /v1/requests/{id}': { runs: [['request', 'get', '1234', '--json'], ['image', 'process', URL_SOURCE, '--op', 'grayscale', '--json']] },
+  'GET /v1/requests/{id}': { runs: [['request', 'get', '1234', '--json'], ['request', 'get', '1234', '--wait', '--json']] },
   'POST /v1/requests/{id}/abort': { runs: [['request', 'abort', '1234', '--json']] },
   'GET /v1/results/{id}': { [LINK]: 'A signed link the API returns in result.files[].url; --out opens it as given, the CLI never builds it.' },
   'GET /v1/files/{id}': { runs: [['file', 'get', FILE_ID, '--json']] },

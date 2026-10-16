@@ -1,5 +1,9 @@
-import { readFile, stat, writeFile } from 'node:fs/promises';
-import { Api, ApiError, VERSION } from './api.js';
+import { createWriteStream } from 'node:fs';
+import { mkdir, readdir, readFile, stat } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { Api, ApiError, BATCH_FINISHED, REQUEST_FINISHED, VERSION } from './api.js';
 
 const HELP = `watermark: the Watermark API from the command line (https://api.watermark.ws/docs)
 
@@ -13,7 +17,16 @@ Usage:
   watermark document process <source> --op <operation> [--max-pages 10] [--out file]
   watermark document read <source>
   watermark document snapshot <source> [--page 1] [--format png] [--out file]
-  watermark request get <id> | watermark request abort <id>
+  watermark preview <source> [--media image|video|document] [--at 5] [--page 0] [--width 1024] [--design <dsn_id>] [--op ...] [--out preview.webp]
+  watermark batch create <source> [<source> ...] [--media image|video|document] [--design <dsn_id>] [--op ...] [--format webp] [--zip|--no-zip] [--destination stg_7a:done/] [--max-duration 30] [--max-pages 10] [--out dir]
+  watermark batch get <id> [--wait] | watermark batch retry <id> | watermark batch abort <id>
+  watermark batch requests <id> [--status failed] [--after <position>] [--limit 50]
+  watermark batches [--limit 20] [--before <id>] [--status failed]
+  watermark design create --name <name> [--media image|video|document|any] --op <operation> [--op ...]
+  watermark design update <dsn_id> [--name <name>] [--media <media>] [--op ...]
+  watermark design get|delete <dsn_id>
+  watermark designs [--limit 20] [--before <dsn_id>]
+  watermark request get <id> [--wait] | watermark request abort <id>
   watermark requests [--limit 20] [--before <id>]
   watermark upload <file> | watermark upload get|delete <upl_id>
   watermark file get|delete <file_id>
@@ -28,12 +41,15 @@ Usage:
 
 A source is a public http(s) URL, a local file (uploaded first), an upload
 (upl_…), a file an earlier request kept (file_…), or an object in a
-connected bucket (stg_7a:path/to/key).
+connected bucket (stg_7a:path/to/key). A batch also takes a local folder
+(every file in it, uploaded four at a time) and stg_7a:folder/ (every object
+under that prefix; note the trailing slash).
 
 Operations (repeat --op; they run in order):
   --op resize:width=800,height=600
   --op grayscale
   --op watermark:image_url=https://example.com/logo.png,x=40,y=40
+  --op watermark:image_url=https://example.com/logo.png,anchor=bottom_right,margin=3%,size=18%,opacity=60
   --ops-json '[{"type":"resize","width":800,"height":600}]'
   See: watermark operations image
 
@@ -41,11 +57,14 @@ Operations (repeat --op; they run in order):
   --outputs-json '[{"name":"large","format":"webp"},{"name":"thumb","operations":[{"type":"resize","width":200,"height":200}]}]'
 
 Options:
-  --out <file>            Wait, then download the result to this file.
-  --no-wait               Return as soon as the request is queued.
-  --timeout <seconds>     How long to wait (default 300).
-  --webhook <url>         Post the finished request here.
-  --event <type>          The webhook events to send (repeatable), such as request.progress.
+  --design <dsn_id>       A saved design whose operations run first; --op is then optional.
+  --out <file|dir>        Wait, then download the result to this file (for a batch: its zips into this directory).
+  --no-wait               Return as soon as the request or batch is queued.
+  --wait                  With request get or batch get: wait until it finishes.
+  --timeout <seconds>     How long to wait (default 300; 3600 for a batch).
+  --webhook <url>         Post the finished request or batch here.
+  --event <type>          The webhook events to send (repeatable), such as request.progress or batch.progress.
+  --request-event <type>  For a batch: the request.* events to post for each of its files (repeatable).
   --customer <id>         Your own reference for who the request is for.
   --metadata key=value    Repeatable.
   --idempotency-key <k>   Make a retry of this command safe.
@@ -56,18 +75,23 @@ Options:
 `;
 
 const MEDIA = { image: 'images', images: 'images', video: 'videos', videos: 'videos', document: 'documents', documents: 'documents', pdf: 'documents' };
+const MEDIA_NAMES = { image: 'image', images: 'image', video: 'video', videos: 'video', document: 'document', documents: 'document', pdf: 'document' };
 const ACTIONS = {
   images: ['process', 'read', 'create'],
   videos: ['process', 'read', 'screenshot'],
   documents: ['process', 'read', 'snapshot'],
 };
-const REPEATABLE = new Set(['op', 'metadata', 'prefix', 'event']);
-const FLAGS = new Set(['json', 'no-wait', 'help', 'version', 'level']);
+const REPEATABLE = new Set(['op', 'metadata', 'prefix', 'event', 'request-event']);
+const FLAGS = new Set(['json', 'no-wait', 'wait', 'zip', 'no-zip', 'help', 'version', 'level']);
+const UPLOADS_AT_ONCE = 4;
+const DESIGN_ID = /^dsn_[A-Za-z0-9]{22}$/;
+const BATCH_ID = /^\d+$/;
+const STORAGE_OBJECT = /^(stg_[0-9a-z]{1,12}):(.+)$/s;
 
 // Parse argv into positionals and options; repeatable options collect arrays.
 export function parseArgs(argv) {
   const positionals = [];
-  const options = { op: [], metadata: [], prefix: [], event: [] };
+  const options = { op: [], metadata: [], prefix: [], event: [], 'request-event': [] };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -105,6 +129,8 @@ export function parseOperation(text) {
   return operation;
 }
 
+// Numbers and booleans are typed; everything else, a percentage such as
+// "3%" included, stays text.
 function typedValue(value) {
   if (value === 'true') return true;
   if (value === 'false') return false;
@@ -139,6 +165,8 @@ export async function main(argv, { env = {}, stdout, stderr, fetch, sleep } = {}
 
   const json = Boolean(options.json);
   const output = (value, human) => print(json ? JSON.stringify(value, null, 2) : human(value));
+  // Progress lines go to stderr, and only when a person is reading.
+  const progress = json ? () => {} : (text) => stderr.write(text);
 
   try {
     const api = new Api({
@@ -149,16 +177,39 @@ export async function main(argv, { env = {}, stdout, stderr, fetch, sleep } = {}
     });
 
     const [command, ...rest] = positionals;
+    const context = { output, print, progress, json, fetch: fetch || globalThis.fetch };
 
     if (MEDIA[command]) {
-      return await runMedia(api, MEDIA[command], rest, options, { output, print, json, fetch: fetch || globalThis.fetch });
+      return await runMedia(api, MEDIA[command], rest, options, context);
     }
 
     switch (command) {
+      case 'preview':
+        return await runPreview(api, rest[0], options, context);
+      case 'batch': {
+        const [action, ...arguments_] = rest;
+        if (action === 'create') return await runBatchCreate(api, arguments_, options, context);
+        return await runBatch(api, action, arguments_[0], options, context);
+      }
+      case 'batches': {
+        const list = await api.request('GET', '/v1/batches', { query: { limit: options.limit, before: options.before, status: options.status } });
+        output(list, (value) => value.data.map((batch) => `${batch.id}\t${batch.media}\t${batch.status}\t${batch.counts.succeeded}/${batch.counts.total} succeeded\t${batch.created_at}`).join('\n') || 'No batches yet.');
+        return 0;
+      }
+      case 'design':
+        return await runDesign(api, rest[0], rest[1], options, context);
+      case 'designs': {
+        const list = await api.request('GET', '/v1/designs', { query: { limit: options.limit, before: options.before } });
+        output(list, (value) => value.data.map(describeDesign).join('\n\n') || 'No designs yet.');
+        return 0;
+      }
       case 'request': {
         const [action, id] = rest;
-        if (!['get', 'abort'].includes(action) || !/^\d+$/.test(id || '')) throw new UsageError('Usage: watermark request get|abort <id>');
-        const request = await api.request(action === 'get' ? 'GET' : 'POST', `/v1/requests/${id}${action === 'abort' ? '/abort' : ''}`);
+        if (!['get', 'abort'].includes(action) || !/^\d+$/.test(id || '')) throw new UsageError('Usage: watermark request get <id> [--wait] | watermark request abort <id>');
+        let request;
+        if (action === 'abort') request = await api.request('POST', `/v1/requests/${id}/abort`);
+        else if (options.wait) request = await api.wait(id, { timeoutMs: Number(options.timeout || 300) * 1000, onProgress: json ? undefined : (current) => progress(`Request ${current.id}: ${current.status}${current.progress !== undefined ? ` ${current.progress}%` : ''}\r`) });
+        else request = await api.request('GET', `/v1/requests/${id}`);
         output(request, describeRequest);
         return request.status === 'failed' ? 1 : 0;
       }
@@ -172,7 +223,7 @@ export async function main(argv, { env = {}, stdout, stderr, fetch, sleep } = {}
         output(account, (value) => [
           `${value.name} (${value.tier}${value.livemode === false ? ', test key' : ''})`,
           `Balance: $${value.balance.amount}`,
-          value.limits ? `Limits: ${value.limits.requests_per_minute} requests a minute, sources up to ${Math.round(value.limits.max_source_bytes / 1048576)} MB` : '',
+          value.limits ? `Limits: ${value.limits.requests_per_minute} requests a minute, sources up to ${Math.round(value.limits.max_source_bytes / 1048576)} MB${value.limits.batch_max_files ? `, batches of up to ${value.limits.batch_max_files} files` : ''}` : '',
         ].filter(Boolean).join('\n'));
         return 0;
       }
@@ -183,7 +234,7 @@ export async function main(argv, { env = {}, stdout, stderr, fetch, sleep } = {}
       }
       case 'operations': {
         const catalog = await api.request('GET', '/v1/operations');
-        const media = rest[0] ? { image: 'image', images: 'image', video: 'video', videos: 'video', document: 'document', documents: 'document' }[rest[0]] : null;
+        const media = rest[0] ? MEDIA_NAMES[rest[0]] : null;
         const selected = media ? { [media]: catalog.data[media] } : catalog.data;
         output(selected, (value) => Object.entries(value).map(([name, entry]) => [
           `${name} (formats: ${entry.formats.join(', ')})`,
@@ -239,7 +290,7 @@ export async function main(argv, { env = {}, stdout, stderr, fetch, sleep } = {}
         if (!options.since) throw new UsageError('Usage: watermark events --since 2026-10-13T15:00:00Z [--limit 100]');
         const events = await api.request('GET', '/v1/events', { query: { since: options.since, limit: options.limit } });
         output(events, (value) => [
-          ...value.data.map((event) => `${new Date(event.created * 1000).toISOString()}\t${event.type}\trequest ${event.data?.id}`),
+          ...value.data.map((event) => `${new Date(event.created * 1000).toISOString()}\t${event.type}\t${event.data?.object === 'batch' ? 'batch' : 'request'} ${event.data?.id}`),
           value.has_more ? `More: watermark events --since ${new Date(value.data.at(-1).created * 1000).toISOString()}` : '',
         ].filter(Boolean).join('\n') || 'No events since then.');
         return 0;
@@ -267,7 +318,7 @@ export async function main(argv, { env = {}, stdout, stderr, fetch, sleep } = {}
   }
 }
 
-async function runMedia(api, media, [action, source], options, { output, print, json, fetch }) {
+async function runMedia(api, media, [action, source], options, { output, progress, json, fetch }) {
   if (!ACTIONS[media].includes(action)) throw new UsageError(`Usage: watermark ${media.replace(/s$/, '')} ${ACTIONS[media].join('|')} <source>`);
 
   const body = {};
@@ -287,9 +338,9 @@ async function runMedia(api, media, [action, source], options, { output, print, 
   }
 
   if (action === 'process' || action === 'create') {
-    const operations = options['ops-json'] ? JSON.parse(options['ops-json']) : options.op.map(parseOperation);
-    if (operations.length === 0) throw new UsageError('Give at least one --op (see: watermark operations).');
-    body.operations = operations;
+    Object.assign(body, designAndOperations(options));
+  } else if (options.design) {
+    throw new UsageError('--design is for process, create, preview and batch create.');
   }
   if (options['outputs-json']) body.outputs = JSON.parse(options['outputs-json']);
   if (options.format) body.output = { format: options.format };
@@ -299,6 +350,185 @@ async function runMedia(api, media, [action, source], options, { output, print, 
   if (options.page !== undefined) body.page = Number(options.page);
   if (options['max-duration'] !== undefined) body.max_duration = Number(options['max-duration']);
   if (options['max-pages'] !== undefined) body.max_pages = Number(options['max-pages']);
+  Object.assign(body, requestOptions(options));
+
+  let request = await api.request('POST', `/v1/${media}/${action}`, { body, idempotencyKey: options['idempotency-key'] });
+
+  return finishRequest(api, request, options, { output, progress, json, fetch });
+}
+
+// POST /v1/previews: a small picture of what the operations do to a file.
+// The API holds the answer for up to 20 seconds and usually returns the
+// finished preview within the call; the CLI waits on for one that takes longer.
+async function runPreview(api, source, options, context) {
+  const body = { source: await resolveSource(api, source) };
+  if (options.media) body.media = mediaName(options.media);
+  Object.assign(body, designAndOperations(options));
+  if (options.width !== undefined) body.width = Number(options.width);
+  if (options.at !== undefined) body.at = Number(options.at);
+  if (options.page !== undefined) body.page = Number(options.page);
+  Object.assign(body, requestOptions(options));
+
+  const request = await api.request('POST', '/v1/previews', { body, idempotencyKey: options['idempotency-key'] });
+
+  return finishRequest(api, request, options, context);
+}
+
+// Wait for a request unless told not to, download its first file with --out,
+// and print it.
+async function finishRequest(api, request, options, { output, progress, json, fetch }) {
+  if (!options['no-wait'] && !REQUEST_FINISHED.includes(request.status)) {
+    request = await api.wait(request.id, {
+      timeoutMs: Number(options.timeout || 300) * 1000,
+      onProgress: json ? undefined : (current) => progress(`Request ${current.id}: ${current.status}${current.progress !== undefined ? ` ${current.progress}%` : ''}\r`),
+    });
+  }
+
+  if (options.out && request.status === 'succeeded') {
+    const url = request.result?.files?.[0]?.url;
+    if (!url) throw new Error(`Request ${request.id} made no file to download.`);
+    await download(fetch, url, options.out);
+    request = { ...request, saved_to: options.out };
+  }
+
+  output(request, describeRequest);
+
+  return request.status === 'failed' || request.status === 'aborted' ? 1 : 0;
+}
+
+// POST /v1/batches: the same operations on many files. Local files and
+// folders are uploaded first; then the CLI waits for the batch and, with
+// --out, downloads its zips.
+async function runBatchCreate(api, sources, options, { output, progress, json, fetch }) {
+  if (!sources.length) throw new UsageError('Usage: watermark batch create <source> [<source> ...] [--design <dsn_id>] [--op ...] [--format webp] [--zip|--no-zip] [--destination stg_7a:done/] [--out dir]');
+  if (options.zip && options['no-zip']) throw new UsageError('Give --zip or --no-zip, not both.');
+
+  const body = {};
+  if (options.media) body.media = mediaName(options.media);
+  body.sources = await resolveBatchSources(api, sources, progress);
+  Object.assign(body, designAndOperations(options));
+  if (options['outputs-json']) body.outputs = JSON.parse(options['outputs-json']);
+  if (options.format) body.output = { format: options.format };
+  if (options.destination) {
+    const prefix = options.destination.match(STORAGE_OBJECT);
+    if (!prefix) throw new UsageError('--destination takes stg_…:folder/ in a connected bucket.');
+    body.destination = { storage: prefix[1], prefix: prefix[2] };
+  }
+  // --out needs zips to download, so it asks for them unless told otherwise.
+  if (options.zip || (options.out && !options['no-zip'] && !options.destination)) body.zip = true;
+  if (options['max-duration'] !== undefined) body.max_duration = Number(options['max-duration']);
+  if (options['max-pages'] !== undefined) body.max_pages = Number(options['max-pages']);
+  Object.assign(body, requestOptions(options));
+  if (options['request-event'].length) body.request_events = options['request-event'];
+
+  let batch = await api.request('POST', '/v1/batches', { body, idempotencyKey: options['idempotency-key'] });
+
+  if (!options['no-wait']) {
+    batch = await waitBatch(api, batch.id, options, progress, json);
+  }
+
+  if (options.out && BATCH_FINISHED.includes(batch.status)) {
+    if (batch.zips?.length) {
+      const saved = await downloadAll(fetch, batch.zips, options.out, progress);
+      batch = { ...batch, saved_to: saved };
+    } else {
+      progress(`Batch ${batch.id} made no zip to download${batch.input?.destination ? ': its files went to your storage' : ''}.\n`);
+    }
+  }
+
+  output(batch, describeBatch);
+
+  return batchExitCode(batch);
+}
+
+async function runBatch(api, action, id, options, { output, progress, json }) {
+  if (!['get', 'requests', 'retry', 'abort'].includes(action) || !BATCH_ID.test(id || '')) {
+    throw new UsageError('Usage: watermark batch create <source> ... | get <id> [--wait] | requests <id> [--status failed] | retry <id> | abort <id>');
+  }
+
+  if (action === 'requests') {
+    const list = await api.request('GET', `/v1/batches/${id}/requests`, { query: { status: options.status, after: options.after, limit: options.limit } });
+    output(list, (value) => [
+      ...value.data.map((request) => `${request.position}\t${request.id}\t${request.status}${request.error ? `\t${request.error.code}: ${request.error.message}` : ''}`),
+      value.has_more ? `More: watermark batch requests ${id} --after ${value.data.at(-1).position}${options.status ? ` --status ${options.status}` : ''}` : '',
+    ].filter(Boolean).join('\n') || 'No files match.');
+    return 0;
+  }
+
+  let batch;
+  if (action === 'get' && options.wait) batch = await waitBatch(api, id, options, progress, json);
+  else if (action === 'get') batch = await api.request('GET', `/v1/batches/${id}`);
+  else batch = await api.request('POST', `/v1/batches/${id}/${action}`);
+
+  output(batch, describeBatch);
+
+  return batchExitCode(batch);
+}
+
+// Long-poll GET /v1/batches/{id} until the batch finishes, showing the counts
+// as they move.
+function waitBatch(api, id, options, progress, json) {
+  return api.waitBatch(id, {
+    timeoutMs: Number(options.timeout || 3600) * 1000,
+    onProgress: json ? undefined : (current) => progress(`Batch ${current.id}: ${current.status} ${current.progress}% (${describeCounts(current.counts)})\r`),
+  });
+}
+
+// A queued batch, and one that finished with every file succeeded, exit 0;
+// one that failed, was aborted or finished partial (some files failed) exits 1.
+function batchExitCode(batch) {
+  return BATCH_FINISHED.includes(batch.status) && batch.status !== 'succeeded' ? 1 : 0;
+}
+
+async function runDesign(api, action, id, options, { output }) {
+  if (action === 'create') {
+    if (!options.name || !(options.op.length || options['ops-json'])) throw new UsageError('Usage: watermark design create --name <name> [--media image|video|document|any] --op <operation> [--op ...]');
+    const body = { name: options.name };
+    if (options.media) body.media = mediaName(options.media, { any: true });
+    body.operations = parseOperations(options);
+    output(await api.request('POST', '/v1/designs', { body, idempotencyKey: options['idempotency-key'] }), describeDesign);
+    return 0;
+  }
+
+  if (!['get', 'update', 'delete'].includes(action) || !DESIGN_ID.test(id || '')) {
+    throw new UsageError('Usage: watermark design create --name <name> --op ... | update <dsn_id> [--name <name>] [--media <media>] [--op ...] | get|delete <dsn_id>');
+  }
+
+  if (action === 'update') {
+    const body = {};
+    if (options.name) body.name = options.name;
+    if (options.media) body.media = mediaName(options.media, { any: true });
+    if (options.op.length || options['ops-json']) body.operations = parseOperations(options);
+    if (!Object.keys(body).length) throw new UsageError('watermark design update needs something to change: --name, --media or --op.');
+    output(await api.request('PATCH', `/v1/designs/${id}`, { body }), describeDesign);
+    return 0;
+  }
+
+  output(await api.request(action === 'get' ? 'GET' : 'DELETE', `/v1/designs/${id}`), describeDesign);
+  return 0;
+}
+
+// The design and operations fields of a processing call: a design, operations,
+// or both; the design's operations run first.
+function designAndOperations(options) {
+  const body = {};
+  if (options.design) {
+    if (!DESIGN_ID.test(options.design)) throw new UsageError('--design takes a design id (dsn_…); see watermark designs.');
+    body.design = options.design;
+  }
+  const operations = parseOperations(options);
+  if (operations.length) body.operations = operations;
+  else if (!body.design) throw new UsageError('Give at least one --op (see: watermark operations), or a --design.');
+  return body;
+}
+
+function parseOperations(options) {
+  return options['ops-json'] ? JSON.parse(options['ops-json']) : options.op.map(parseOperation);
+}
+
+// The webhook, customer and metadata fields every processing call takes.
+function requestOptions(options) {
+  const body = {};
   if (options.webhook) body.webhook_url = options.webhook;
   if (options.event.length) body.events = options.event;
   if (options.customer) body.customer = options.customer;
@@ -309,28 +539,13 @@ async function runMedia(api, media, [action, source], options, { output, print, 
       return [key, value];
     }));
   }
+  return body;
+}
 
-  let request = await api.request('POST', `/v1/${media}/${action}`, { body, idempotencyKey: options['idempotency-key'] });
-
-  if (!options['no-wait']) {
-    request = await api.wait(request.id, {
-      timeoutMs: Number(options.timeout || 300) * 1000,
-      onProgress: json ? undefined : (current) => process.stderr.write(`Request ${current.id}: ${current.status}${current.progress !== undefined ? ` ${current.progress}%` : ''}\r`),
-    });
-  }
-
-  if (options.out && request.status === 'succeeded') {
-    const url = request.result?.files?.[0]?.url;
-    if (!url) throw new Error(`Request ${request.id} made no file to download.`);
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Downloading the result failed: HTTP ${response.status}.`);
-    await writeFile(options.out, Buffer.from(await response.arrayBuffer()));
-    request = { ...request, saved_to: options.out };
-  }
-
-  output(request, describeRequest);
-
-  return request.status === 'failed' || request.status === 'aborted' ? 1 : 0;
+function mediaName(text, { any = false } = {}) {
+  const media = MEDIA_NAMES[text] || (any && text === 'any' ? 'any' : null);
+  if (!media) throw new UsageError(`--media takes image, video or document${any ? ' (or any)' : ''}, not "${text}".`);
+  return media;
 }
 
 // A source as the API takes it: a URL, an id, a storage object, or a local
@@ -339,7 +554,7 @@ async function resolveSource(api, source) {
   if (!source) throw new UsageError('Give a source: a URL, a local file, upl_…, file_… or stg_…:key.');
   if (/^https?:\/\//.test(source) || /^(upl|file)_[A-Za-z0-9]{22}$/.test(source)) return source;
 
-  const object = source.match(/^(stg_[0-9a-z]{1,12}):(.+)$/s);
+  const object = source.match(STORAGE_OBJECT);
   if (object) return { storage: object[1], key: object[2] };
 
   const local = await stat(source).catch(() => null);
@@ -347,6 +562,77 @@ async function resolveSource(api, source) {
 
   const upload = await api.upload(source, { readFile });
   return upload.id;
+}
+
+// A batch's sources as the API takes them. Besides what a single request
+// takes, a folder stands for every file in it (sorted) and stg_…:folder/ for
+// every object under a prefix. Local files are uploaded a few at a time, in
+// the order given.
+async function resolveBatchSources(api, sources, progress) {
+  const resolved = [];
+
+  for (const source of sources) {
+    if (/^https?:\/\//.test(source) || /^(upl|file)_[A-Za-z0-9]{22}$/.test(source)) {
+      resolved.push(source);
+      continue;
+    }
+    const object = source.match(STORAGE_OBJECT);
+    if (object) {
+      resolved.push(object[2].endsWith('/') ? { storage: object[1], prefix: object[2] } : { storage: object[1], key: object[2] });
+      continue;
+    }
+    const local = await stat(source).catch(() => null);
+    if (local?.isFile()) {
+      resolved.push({ path: source });
+    } else if (local?.isDirectory()) {
+      const entries = await readdir(source, { withFileTypes: true });
+      const files = entries.filter((entry) => entry.isFile() && !entry.name.startsWith('.')).map((entry) => entry.name).sort();
+      if (!files.length) throw new UsageError(`"${source}" has no files in it.`);
+      resolved.push(...files.map((name) => ({ path: join(source, name) })));
+    } else {
+      throw new UsageError(`"${source}" is not a URL, an id, stg_…:key, stg_…:folder/, or a file or folder here.`);
+    }
+  }
+
+  const uploads = resolved.filter((source) => source.path);
+  let done = 0;
+  await inParallel(uploads, UPLOADS_AT_ONCE, async (source) => {
+    source.id = (await api.upload(source.path, { readFile })).id;
+    progress(`Uploaded ${++done} of ${uploads.length} files\r`);
+  });
+
+  return resolved.map((source) => (source.path ? source.id : source));
+}
+
+// Run work on every item, at most `limit` at a time, in order.
+async function inParallel(items, limit, work) {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) await work(items[next++]);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
+// Save a signed download link, which needs no key, to a file, streamed so a
+// zip of several gigabytes never sits in memory.
+async function download(fetch, url, path) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Downloading ${basename(path)} failed: HTTP ${response.status}.`);
+  await mkdir(dirname(path) || '.', { recursive: true });
+  await pipeline(response.body ? Readable.fromWeb(response.body) : Readable.from([]), createWriteStream(path));
+}
+
+// Save every file (a batch's zips) into a directory, named as the API names
+// them, and say how far along it is.
+async function downloadAll(fetch, files, directory, progress) {
+  const saved = [];
+  for (const [index, file] of files.entries()) {
+    const path = join(directory, `${file.name}.${file.format}`);
+    progress(`Downloading ${basename(path)} (${index + 1} of ${files.length}${file.size ? `, ${Math.round(file.size / 1048576)} MB` : ''})\n`);
+    await download(fetch, file.url, path);
+    saved.push(path);
+  }
+  return saved;
 }
 
 // --read and --write as the API takes them, for connecting or changing storage.
@@ -403,5 +689,36 @@ function describeRequest(request) {
   }
   if (request.saved_to) lines.push(`Saved to ${request.saved_to}`);
   if (request.price) lines.push(`Price: $${request.price.amount}`);
+  return lines.join('\n');
+}
+
+function describeBatch(batch) {
+  const finished = BATCH_FINISHED.includes(batch.status);
+  const lines = [`Batch ${batch.id} (${batch.media}): ${batch.status}${!finished && batch.progress !== undefined ? ` ${batch.progress}%` : ''}`];
+  if (batch.counts) lines.push(`Files: ${describeCounts(batch.counts)}`);
+  if (batch.error) lines.push(`Error ${batch.error.code}: ${batch.error.message}`);
+  if (batch.input?.destination) lines.push(`Written to: ${batch.input.destination.storage}:${batch.input.destination.prefix}`);
+  for (const zip of batch.zips || []) {
+    lines.push(`Zip ${zip.name}.${zip.format} (${zip.files} files, ${zip.size} bytes): ${zip.url} (link valid until ${zip.url_expires_at})`);
+  }
+  if (batch.saved_to) lines.push(`Saved to ${[].concat(batch.saved_to).join(', ')}`);
+  if (finished && batch.counts?.failed) lines.push(`Failed files: watermark batch requests ${batch.id} --status failed${batch.status !== 'aborted' ? `, then watermark batch retry ${batch.id}` : ''}`);
+  else if (!finished) lines.push(`Follow it: watermark batch get ${batch.id} --wait`);
+  if (batch.price) {
+    const estimate = !finished && batch.price.estimate_micro_usd !== undefined ? ` (estimate $${(batch.price.estimate_micro_usd / 1_000_000).toFixed(6)})` : '';
+    lines.push(`Price: $${batch.price.amount}${estimate}`);
+  }
+  return lines.join('\n');
+}
+
+function describeCounts(counts = {}) {
+  return `${counts.total} in all, ${counts.succeeded} succeeded, ${counts.failed} failed, ${counts.aborted} aborted, ${counts.running} running, ${counts.waiting} waiting`;
+}
+
+function describeDesign(design) {
+  const lines = [`Design ${design.id}: ${design.name} (${design.media})`];
+  lines.push(`Operations: ${JSON.stringify(design.operations)}`);
+  for (const asset of design.assets || []) lines.push(`Asset: ${asset.id} (${asset.format}, ${asset.size} bytes)`);
+  if (design.deleted_at) lines.push(`Deleted ${design.deleted_at}`);
   return lines.join('\n');
 }
