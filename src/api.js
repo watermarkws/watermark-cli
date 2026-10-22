@@ -2,7 +2,7 @@
 // retries for 429 (after Retry-After), 5xx and dropped connections, with an
 // Idempotency-Key on every POST so a retried POST never runs twice.
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.1.1';
 
 export class ApiError extends Error {
   constructor(status, error = {}) {
