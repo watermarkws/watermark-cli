@@ -1,6 +1,6 @@
 ---
 name: watermark
-description: Watermark, resize, crop, convert and stamp text on images, videos and PDF or Word documents with the Watermark API from the shell, through the `watermark` CLI. Use it when a user wants a logo or text placed on files, a folder of photos resized or converted in one batch (JPEG, PNG, WebP, HEIC, camera RAW and more), a video watermarked or trimmed to a preview, a frame or a page saved as an image, every page of a PDF stamped while it stays a PDF, a quick preview of a layout before the run, or a watermark layout kept as a reusable design. Sources can be public URLs, local files and folders (uploaded automatically) or files an earlier request made. Needs a WATERMARK_API_KEY from https://watermark.ws/developers.
+description: Watermark, resize, crop, convert and stamp text on images, videos and PDF or Word documents with the Watermark API from the shell, through the `watermark` CLI. Use it when a user wants a logo or text placed on files, a folder of photos resized or converted in one batch (JPEG, PNG, WebP, HEIC, camera RAW and more), a video watermarked or trimmed to a preview, a frame or a page saved as an image, every page of a PDF stamped while it stays a PDF, a quick preview of a layout before the run, or a watermark layout kept as a reusable template. Sources can be public URLs, local files and folders (uploaded automatically) or files an earlier request made. Needs a WATERMARK_API_KEY from https://watermark.ws/developers.
 ---
 
 # Watermark CLI
@@ -30,15 +30,15 @@ watermark video screenshot clip.mp4 --seconds 5 --format png --out frame.png
 watermark document process contract.pdf --op watermark:image_url=https://example.com/stamp.png,x=20,y=230 --out contract-stamped.pdf
 watermark document snapshot contract.pdf --page 1 --format png --out page-1.png
 watermark preview photo.jpg --op 'watermark:image_url=https://example.com/logo.png,anchor=bottom_right,margin=3%,size=18%,opacity=60' --out preview.webp   # a small WebP of what the operations do, before the real run ($0.0005)
-watermark design create --name "Corner logo" --op 'watermark:image_url=https://example.com/logo.png,anchor=bottom_right,margin=3%,size=18%,opacity=60' --json | jq -r .id   # keep a layout; then --design dsn_… on any command
-watermark designs                                            # the saved designs and their dsn_… ids
+watermark template create --name "Corner logo" --op 'watermark:image_url=https://example.com/logo.png,anchor=bottom_right,margin=3%,size=18%,opacity=60' --json | jq -r .id   # keep a layout; then --template tpl_… on any command
+watermark templates                                          # the saved templates and their tpl_… ids
 watermark operations image                                   # every operation and parameter, live from the API (also video, document)
 watermark fonts                                              # font names a text operation accepts
 watermark request get 1234                                   # follow a request started with --no-wait
 watermark account                                            # balance and limits
 ```
 
-Useful options on processing commands: `--design <dsn_id>` (a saved design's operations run first; `--op` is then optional), `--out <file>` (wait, then download), `--no-wait` (print the queued request and return), `--timeout <seconds>` (default 300), `--format <fmt>`, `--ops-json '[…]'` instead of `--op`, `--max-duration <s>` (video), `--max-pages <n>` (documents), `--customer <id>`, `--metadata key=value`, `--json`.
+Useful options on processing commands: `--template <tpl_id>` (a saved template's operations run first; `--op` is then optional), `--out <file>` (wait, then download), `--no-wait` (print the queued request and return), `--timeout <seconds>` (default 300), `--format <fmt>`, `--ops-json '[…]'` instead of `--op`, `--max-duration <s>` (video), `--max-pages <n>` (documents), `--customer <id>`, `--metadata key=value`, `--json`.
 
 Operations that exist: images `resize`, `crop`, `rotate`, `flip`, `grayscale`, `border`, `watermark`, `thumbnail`, `compress`, `sepia`, `exposure`, `filter`, `remove_background`, `orient`, `text`, `trim`, `color`, `frame`, `protect`, `shave`, `line`, `adjust`, `color_profile`; videos `resize`, `crop`, `rotate`, `flip`, `grayscale`, `border`, `watermark`; documents `watermark` only (an image on every page; make a text stamp with `image create` first). `watermark` takes `image_url` or `image` (a `file_…` or `upl_…` id) and a place: prefer `anchor` (`top_left`, `top`, `top_right`, `left`, `center`, `right`, `bottom_left`, `bottom`, `bottom_right`) with `margin` and `size` as percentages of the file (`margin=3%,size=18%`), which lands the same on every size of file, over `x`, `y` in pixels from the top left; also `opacity` (0-100), `rotation` (degrees), `tile_spacing` (repeat it across the file, pixels or `25%`), `diagonal_lines_color`/`diagonal_lines_opacity`. A `text` operation takes `size` and `margin` as percentages too. Run `watermark operations image` before using a parameter you are not sure of.
 
@@ -50,7 +50,7 @@ One batch: the folder's files are uploaded (four at a time), the API runs the sa
 watermark batch create ./photos --op resize:width=1600,height=1600 --op 'watermark:image_url=https://example.com/logo.png,anchor=bottom_right,margin=3%,size=18%,opacity=60' --format webp --out ./out
 ```
 
-To see the price before anything runs, add `--no-wait --json`: the accepted batch comes back with `price.estimate_micro_usd` (the whole batch, in millionths of a dollar) and nothing has been charged yet; follow it later with `watermark batch get <id> --wait`, or abort it with `watermark batch abort <id>`. A batch that finishes `partial` had failed files: `watermark batch requests <id> --status failed` lists them with the reason, and `watermark batch retry <id>` runs them again once the cause is fixed. Use `--design dsn_…` instead of repeating the watermark `--op`, `--media video|document` for anything but images, and `--destination stg_7a:done/` to write the files into the user's own bucket instead of zips.
+To see the price before anything runs, add `--no-wait --json`: the accepted batch comes back with `price.estimate_micro_usd` (the whole batch, in millionths of a dollar) and nothing has been charged yet; follow it later with `watermark batch get <id> --wait`, or abort it with `watermark batch abort <id>`. A batch that finishes `partial` had failed files: `watermark batch requests <id> --status failed` lists them with the reason, and `watermark batch retry <id>` runs them again once the cause is fixed. Use `--template tpl_…` instead of repeating the watermark `--op`, `--media video|document` for anything but images, and `--destination stg_7a:done/` to write the files into the user's own bucket instead of zips.
 
 Stamp text across every page of a PDF: make the stamp, then watermark the document with it.
 
@@ -61,7 +61,7 @@ watermark document process contract.pdf --op "watermark:image=$stamp,x=20,y=230"
 
 ## Output and exit codes
 
-With `--json`, stdout is only the finished request (or batch, or design) as the API returns it; progress goes to stderr:
+With `--json`, stdout is only the finished request (or batch, or template) as the API returns it; progress goes to stderr:
 
 ```json
 {"id": 1234, "object": "request", "endpoint": "images/process", "status": "succeeded",
@@ -99,7 +99,7 @@ A batch prints `{"id": 42, "object": "batch", "status": "succeeded", "counts": {
 | `422 validation_failed` | A parameter is wrong; the invalid fields are listed under the message. Check `watermark operations <media>`. |
 | `422 batch_too_large` / `422 empty_source_list` | More files than the account's batch limit, or a folder or prefix with no files in it. Split the batch, or check the source. |
 | `409 batch_not_finished` / `409 nothing_to_retry` / `409 batch_finished` | A retry before the batch finished, a retry with no failed file, or an abort of a finished batch. |
-| `404 design_not_found` / `422 design_media_mismatch` / `422 too_many_designs` | No such design (see `watermark designs`), a design made for another media, or the account's design limit; delete one. |
+| `404 template_not_found` / `422 template_media_mismatch` / `422 too_many_templates` | No such template (see `watermark templates`), a template made for another media, or the account's template limit; delete one. |
 | `429 rate_limited` / `429 concurrency_limited` | Too many requests a minute, or too many running at once. The CLI retries twice; otherwise wait and run fewer in parallel. |
 | `is not a URL, an id, stg_…:key, or a file here` | The source path does not exist or is not a file. |
 | `Request … was still processing after 300 seconds` | A long video. Rerun with `--timeout 1800`, or `--no-wait` and later `watermark request get <id> --wait`. |
@@ -108,6 +108,6 @@ A batch prints `{"id": 42, "object": "batch", "status": "succeeded", "counts": {
 ## More
 
 - Agent guide, with MCP server, HTTP and worked examples: https://api.watermark.ws/docs/agents.md
-- Batches, and designs and layout: https://api.watermark.ws/docs/batches.md, https://api.watermark.ws/docs/designs.md
+- Batches, and templates and layout: https://api.watermark.ws/docs/batches.md, https://api.watermark.ws/docs/templates.md
 - Every operation and parameter: https://api.watermark.ws/docs/operations.md
 - Every command and option: `watermark --help`, or https://api.watermark.ws/docs/cli.md

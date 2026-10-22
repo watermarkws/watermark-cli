@@ -17,15 +17,15 @@ Usage:
   watermark document process <source> --op <operation> [--max-pages 10] [--out file]
   watermark document read <source>
   watermark document snapshot <source> [--page 1] [--format png] [--out file]
-  watermark preview <source> [--media image|video|document] [--at 5] [--page 0] [--width 1024] [--design <dsn_id>] [--op ...] [--out preview.webp]
-  watermark batch create <source> [<source> ...] [--media image|video|document] [--design <dsn_id>] [--op ...] [--format webp] [--zip|--no-zip] [--destination stg_7a:done/] [--max-duration 30] [--max-pages 10] [--out dir]
+  watermark preview <source> [--media image|video|document] [--at 5] [--page 0] [--width 1024] [--template <tpl_id>] [--op ...] [--out preview.webp]
+  watermark batch create <source> [<source> ...] [--media image|video|document] [--template <tpl_id>] [--op ...] [--format webp] [--zip|--no-zip] [--destination stg_7a:done/] [--max-duration 30] [--max-pages 10] [--out dir]
   watermark batch get <id> [--wait] | watermark batch retry <id> | watermark batch abort <id>
   watermark batch requests <id> [--status failed] [--after <position>] [--limit 50]
   watermark batches [--limit 20] [--before <id>] [--status failed]
-  watermark design create --name <name> [--media image|video|document|any] --op <operation> [--op ...]
-  watermark design update <dsn_id> [--name <name>] [--media <media>] [--op ...]
-  watermark design get|delete <dsn_id>
-  watermark designs [--limit 20] [--before <dsn_id>]
+  watermark template create --name <name> [--media image|video|document|any] --op <operation> [--op ...]
+  watermark template update <tpl_id> [--name <name>] [--media <media>] [--op ...]
+  watermark template get|delete <tpl_id>
+  watermark templates [--limit 20] [--before <tpl_id>]
   watermark request get <id> [--wait] | watermark request abort <id>
   watermark requests [--limit 20] [--before <id>]
   watermark upload <file> | watermark upload get|delete <upl_id>
@@ -57,7 +57,7 @@ Operations (repeat --op; they run in order):
   --outputs-json '[{"name":"large","format":"webp"},{"name":"thumb","operations":[{"type":"resize","width":200,"height":200}]}]'
 
 Options:
-  --design <dsn_id>       A saved design whose operations run first; --op is then optional.
+  --template <tpl_id>     A saved template whose operations run first; --op is then optional.
   --out <file|dir>        Wait, then download the result to this file (for a batch: its zips into this directory).
   --no-wait               Return as soon as the request or batch is queued.
   --wait                  With request get or batch get: wait until it finishes.
@@ -84,7 +84,7 @@ const ACTIONS = {
 const REPEATABLE = new Set(['op', 'metadata', 'prefix', 'event', 'request-event']);
 const FLAGS = new Set(['json', 'no-wait', 'wait', 'zip', 'no-zip', 'help', 'version', 'level']);
 const UPLOADS_AT_ONCE = 4;
-const DESIGN_ID = /^dsn_[A-Za-z0-9]{22}$/;
+const TEMPLATE_ID = /^tpl_[A-Za-z0-9]{22}$/;
 const BATCH_ID = /^\d+$/;
 const STORAGE_OBJECT = /^(stg_[0-9a-z]{1,12}):(.+)$/s;
 
@@ -196,11 +196,11 @@ export async function main(argv, { env = {}, stdout, stderr, fetch, sleep } = {}
         output(list, (value) => value.data.map((batch) => `${batch.id}\t${batch.media}\t${batch.status}\t${batch.counts.succeeded}/${batch.counts.total} succeeded\t${batch.created_at}`).join('\n') || 'No batches yet.');
         return 0;
       }
-      case 'design':
-        return await runDesign(api, rest[0], rest[1], options, context);
-      case 'designs': {
-        const list = await api.request('GET', '/v1/designs', { query: { limit: options.limit, before: options.before } });
-        output(list, (value) => value.data.map(describeDesign).join('\n\n') || 'No designs yet.');
+      case 'template':
+        return await runTemplate(api, rest[0], rest[1], options, context);
+      case 'templates': {
+        const list = await api.request('GET', '/v1/templates', { query: { limit: options.limit, before: options.before } });
+        output(list, (value) => value.data.map(describeTemplate).join('\n\n') || 'No templates yet.');
         return 0;
       }
       case 'request': {
@@ -338,9 +338,9 @@ async function runMedia(api, media, [action, source], options, { output, progres
   }
 
   if (action === 'process' || action === 'create') {
-    Object.assign(body, designAndOperations(options));
-  } else if (options.design) {
-    throw new UsageError('--design is for process, create, preview and batch create.');
+    Object.assign(body, templateAndOperations(options));
+  } else if (options.template) {
+    throw new UsageError('--template is for process, create, preview and batch create.');
   }
   if (options['outputs-json']) body.outputs = JSON.parse(options['outputs-json']);
   if (options.format) body.output = { format: options.format };
@@ -363,7 +363,7 @@ async function runMedia(api, media, [action, source], options, { output, progres
 async function runPreview(api, source, options, context) {
   const body = { source: await resolveSource(api, source) };
   if (options.media) body.media = mediaName(options.media);
-  Object.assign(body, designAndOperations(options));
+  Object.assign(body, templateAndOperations(options));
   if (options.width !== undefined) body.width = Number(options.width);
   if (options.at !== undefined) body.at = Number(options.at);
   if (options.page !== undefined) body.page = Number(options.page);
@@ -400,13 +400,13 @@ async function finishRequest(api, request, options, { output, progress, json, fe
 // folders are uploaded first; then the CLI waits for the batch and, with
 // --out, downloads its zips.
 async function runBatchCreate(api, sources, options, { output, progress, json, fetch }) {
-  if (!sources.length) throw new UsageError('Usage: watermark batch create <source> [<source> ...] [--design <dsn_id>] [--op ...] [--format webp] [--zip|--no-zip] [--destination stg_7a:done/] [--out dir]');
+  if (!sources.length) throw new UsageError('Usage: watermark batch create <source> [<source> ...] [--template <tpl_id>] [--op ...] [--format webp] [--zip|--no-zip] [--destination stg_7a:done/] [--out dir]');
   if (options.zip && options['no-zip']) throw new UsageError('Give --zip or --no-zip, not both.');
 
   const body = {};
   if (options.media) body.media = mediaName(options.media);
   body.sources = await resolveBatchSources(api, sources, progress);
-  Object.assign(body, designAndOperations(options));
+  Object.assign(body, templateAndOperations(options));
   if (options['outputs-json']) body.outputs = JSON.parse(options['outputs-json']);
   if (options.format) body.output = { format: options.format };
   if (options.destination) {
@@ -486,18 +486,18 @@ function batchExitCode(batch) {
   return BATCH_FINISHED.includes(batch.status) && batch.status !== 'succeeded' ? 1 : 0;
 }
 
-async function runDesign(api, action, id, options, { output }) {
+async function runTemplate(api, action, id, options, { output }) {
   if (action === 'create') {
-    if (!options.name || !(options.op.length || options['ops-json'])) throw new UsageError('Usage: watermark design create --name <name> [--media image|video|document|any] --op <operation> [--op ...]');
+    if (!options.name || !(options.op.length || options['ops-json'])) throw new UsageError('Usage: watermark template create --name <name> [--media image|video|document|any] --op <operation> [--op ...]');
     const body = { name: options.name };
     if (options.media) body.media = mediaName(options.media, { any: true });
     body.operations = parseOperations(options);
-    output(await api.request('POST', '/v1/designs', { body, idempotencyKey: options['idempotency-key'] }), describeDesign);
+    output(await api.request('POST', '/v1/templates', { body, idempotencyKey: options['idempotency-key'] }), describeTemplate);
     return 0;
   }
 
-  if (!['get', 'update', 'delete'].includes(action) || !DESIGN_ID.test(id || '')) {
-    throw new UsageError('Usage: watermark design create --name <name> --op ... | update <dsn_id> [--name <name>] [--media <media>] [--op ...] | get|delete <dsn_id>');
+  if (!['get', 'update', 'delete'].includes(action) || !TEMPLATE_ID.test(id || '')) {
+    throw new UsageError('Usage: watermark template create --name <name> --op ... | update <tpl_id> [--name <name>] [--media <media>] [--op ...] | get|delete <tpl_id>');
   }
 
   if (action === 'update') {
@@ -505,26 +505,26 @@ async function runDesign(api, action, id, options, { output }) {
     if (options.name) body.name = options.name;
     if (options.media) body.media = mediaName(options.media, { any: true });
     if (options.op.length || options['ops-json']) body.operations = parseOperations(options);
-    if (!Object.keys(body).length) throw new UsageError('watermark design update needs something to change: --name, --media or --op.');
-    output(await api.request('PATCH', `/v1/designs/${id}`, { body }), describeDesign);
+    if (!Object.keys(body).length) throw new UsageError('watermark template update needs something to change: --name, --media or --op.');
+    output(await api.request('PATCH', `/v1/templates/${id}`, { body }), describeTemplate);
     return 0;
   }
 
-  output(await api.request(action === 'get' ? 'GET' : 'DELETE', `/v1/designs/${id}`), describeDesign);
+  output(await api.request(action === 'get' ? 'GET' : 'DELETE', `/v1/templates/${id}`), describeTemplate);
   return 0;
 }
 
-// The design and operations fields of a processing call: a design, operations,
-// or both; the design's operations run first.
-function designAndOperations(options) {
+// The template and operations fields of a processing call: a template, operations,
+// or both; the template's operations run first.
+function templateAndOperations(options) {
   const body = {};
-  if (options.design) {
-    if (!DESIGN_ID.test(options.design)) throw new UsageError('--design takes a design id (dsn_…); see watermark designs.');
-    body.design = options.design;
+  if (options.template) {
+    if (!TEMPLATE_ID.test(options.template)) throw new UsageError('--template takes a template id (tpl_…); see watermark templates.');
+    body.template = options.template;
   }
   const operations = parseOperations(options);
   if (operations.length) body.operations = operations;
-  else if (!body.design) throw new UsageError('Give at least one --op (see: watermark operations), or a --design.');
+  else if (!body.template) throw new UsageError('Give at least one --op (see: watermark operations), or a --template.');
   return body;
 }
 
@@ -731,10 +731,10 @@ function describeCounts(counts = {}) {
   return `${counts.total} in all, ${counts.succeeded} succeeded, ${counts.failed} failed, ${counts.aborted} aborted, ${counts.running} running, ${counts.waiting} waiting`;
 }
 
-function describeDesign(design) {
-  const lines = [`Design ${design.id}: ${design.name} (${design.media})`];
-  lines.push(`Operations: ${JSON.stringify(design.operations)}`);
-  for (const asset of design.assets || []) lines.push(`Asset: ${asset.id} (${asset.format}, ${asset.size} bytes)`);
-  if (design.deleted_at) lines.push(`Deleted ${design.deleted_at}`);
+function describeTemplate(template) {
+  const lines = [`Template ${template.id}: ${template.name} (${template.media})`];
+  lines.push(`Operations: ${JSON.stringify(template.operations)}`);
+  for (const asset of template.assets || []) lines.push(`Asset: ${asset.id} (${asset.format}, ${asset.size} bytes)`);
+  if (template.deleted_at) lines.push(`Deleted ${template.deleted_at}`);
   return lines.join('\n');
 }

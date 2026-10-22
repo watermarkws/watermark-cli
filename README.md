@@ -31,12 +31,12 @@ watermark video process <source> --op <operation> [--max-duration 30] [--out fil
 watermark video read <source> | watermark video screenshot <source> --seconds 5
 watermark document process <source> --op <operation> [--max-pages 10] [--out file]
 watermark document read <source> | watermark document snapshot <source> --page 1
-watermark preview <source> [--media image|video|document] [--at 5] [--page 0] [--width 1024] [--design <dsn_id>] [--op ...] [--out preview.webp]
-watermark batch create <source> [<source> ...] [--media image|video|document] [--design <dsn_id>] [--op ...] [--format webp] [--zip|--no-zip] [--destination stg_7a:done/] [--max-duration 30] [--max-pages 10] [--out dir]
+watermark preview <source> [--media image|video|document] [--at 5] [--page 0] [--width 1024] [--template <tpl_id>] [--op ...] [--out preview.webp]
+watermark batch create <source> [<source> ...] [--media image|video|document] [--template <tpl_id>] [--op ...] [--format webp] [--zip|--no-zip] [--destination stg_7a:done/] [--max-duration 30] [--max-pages 10] [--out dir]
 watermark batch get <id> [--wait] | watermark batch requests <id> [--status failed] [--after <position>] [--limit 50] | watermark batch retry <id> | watermark batch abort <id>
 watermark batches [--limit 20] [--before <id>] [--status failed]
-watermark design create --name <name> [--media image|video|document|any] --op <operation> [--op ...]
-watermark design update <dsn_id> [--name <name>] [--media <media>] [--op ...] | watermark design get|delete <dsn_id> | watermark designs [--limit 20] [--before <dsn_id>]
+watermark template create --name <name> [--media image|video|document|any] --op <operation> [--op ...]
+watermark template update <tpl_id> [--name <name>] [--media <media>] [--op ...] | watermark template get|delete <tpl_id> | watermark templates [--limit 20] [--before <tpl_id>]
 watermark request get <id> [--wait] | watermark request abort <id>
 watermark requests [--before <id>] | watermark account | watermark usage --group-by endpoint [--customer <id>]
 watermark upload photo.heic | watermark upload get|delete <upl_id>
@@ -52,7 +52,7 @@ Processing commands wait for the request to finish (up to `--timeout`, default 3
 
 Operations run in order: `--op type:param=value,param=value`, or all at once with `--ops-json '[{"type":"resize","width":800,"height":600}]'`. `watermark operations` lists them all. A `watermark` operation is placed by `anchor`, `margin` and `size` as percentages of the file (`anchor=bottom_right,margin=3%,size=18%`), which lands the same on every size of file, or by `x` and `y` in pixels; percentages pass through as text.
 
-`--design <dsn_id>` runs a saved design's operations first, on `process`, `create`, `preview` and `batch create`; `--op` is then optional. `watermark design create` keeps an operations list, and the logo it names, under a name on the account.
+`--template <tpl_id>` runs a saved template's operations first, on `process`, `create`, `preview` and `batch create`; `--op` is then optional. `watermark template create` keeps an operations list, and the logo it names, under a name on the account.
 
 `watermark preview` makes one small WebP of what the operations do to a file (a frame of a video with `--at`, a page of a document with `--page`), usually within the call.
 
@@ -69,7 +69,7 @@ connected bucket (`stg_7a:path/to/key`). A batch also takes a local folder and
 
 ## Errors
 
-The CLI passes every error code through as the API sends it: `Error 422 validation_failed: …`, with every invalid field below it, or with `--json` the whole error object (`type`, `code`, `message`, `param`, `request_id`, `errors`, and the `permissions_policy` a storage change whose check failed needs). The codes are listed at https://api.watermark.ws/docs/errors.md. Batches and designs add these:
+The CLI passes every error code through as the API sends it: `Error 422 validation_failed: …`, with every invalid field below it, or with `--json` the whole error object (`type`, `code`, `message`, `param`, `request_id`, `errors`, and the `permissions_policy` a storage change whose check failed needs). The codes are listed at https://api.watermark.ws/docs/errors.md. Batches and templates add these:
 
 - `batch_too_large` (422): more files than the account's `batch_max_files`, a listed prefix included.
 - `empty_source_list` (422): the sources named no file.
@@ -77,10 +77,10 @@ The CLI passes every error code through as the API sends it: `Error 422 validati
 - `batch_not_finished` (409): a retry of a batch that is still running.
 - `nothing_to_retry` (409): a retry of a batch with no failed file.
 - `batch_finished` (409): an abort of a batch that is already done.
-- `design_not_found` (404): no such design on the account, or it was deleted.
-- `design_media_mismatch` (422): a design made for another media.
-- `too_many_designs` (422): the account already keeps `max_designs`.
-- `upload_in_use` (409): an upload a request or design has already taken.
+- `template_not_found` (404): no such template on the account, or it was deleted.
+- `template_media_mismatch` (422): a template made for another media.
+- `too_many_templates` (422): the account already keeps `max_templates`.
+- `upload_in_use` (409): an upload a request or template has already taken.
 
 ## Exit codes
 

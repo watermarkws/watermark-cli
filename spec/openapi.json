@@ -4,7 +4,7 @@
         "title": "Watermark API",
         "version": "1.0.0",
         "summary": "Watermark, resize and convert images, videos and PDFs.",
-        "description": "Send a file and a list of operations; the API processes the file in the background and returns a link to the result. Built for jobs a local script does badly: batches of hundreds of files, video, PDF and Word documents that keep their type, HEIC and camera RAW photos, text in real fonts, and delivery straight to your own S3 bucket.\n\nThe file is a public URL, an upload (`POST /v1/uploads`, for a file that is not on the web), a file an earlier request made (`file_…`) or an object in a connected bucket. Never send a file's bytes in a request body.\n\nEvery processing endpoint answers `202` with a request in status `queued`; send `wait` (up to 25 seconds) to get `200` with the finished request when it is quick. Otherwise poll `GET /v1/requests/{id}` or pass `webhook_url`. Download `result.files[0].url`; failed requests are free.\n\nMany files with the same operations go through one `POST /v1/batches`, paced by the account and zipped at the end. `POST /v1/previews` shows what operations will do on one file before you run them. A `design` (`POST /v1/designs`) keeps an operations list, and the logo it uses, on the account for every call after.\n\n**[See every operation, with the request to send and a picture of the result](https://api.watermark.ws/docs/operations)**\n\nDocs: https://api.watermark.ws/docs · For AI agents: https://api.watermark.ws/docs/agents · As Markdown: https://api.watermark.ws/llms.txt",
+        "description": "Send a file and a list of operations; the API processes the file in the background and returns a link to the result. Built for jobs a local script does badly: batches of hundreds of files, video, PDF and Word documents that keep their type, HEIC and camera RAW photos, text in real fonts, and delivery straight to your own S3 bucket.\n\nThe file is a public URL, an upload (`POST /v1/uploads`, for a file that is not on the web), a file an earlier request made (`file_…`) or an object in a connected bucket. Never send a file's bytes in a request body.\n\nEvery processing endpoint answers `202` with a request in status `queued`; send `wait` (up to 25 seconds) to get `200` with the finished request when it is quick. Otherwise poll `GET /v1/requests/{id}` or pass `webhook_url`. Download `result.files[0].url`; failed requests are free.\n\nMany files with the same operations go through one `POST /v1/batches`, paced by the account and zipped at the end. `POST /v1/previews` shows what operations will do on one file before you run them. A `template` (`POST /v1/templates`) keeps an operations list, and the logo it uses, on the account for every call after.\n\n**[See every operation, with the request to send and a picture of the result](https://api.watermark.ws/docs/operations)**\n\nDocs: https://api.watermark.ws/docs · For AI agents: https://api.watermark.ws/docs/agents · As Markdown: https://api.watermark.ws/llms.txt",
         "contact": {
             "name": "Watermark support",
             "email": "support@watermark.ws",
@@ -43,8 +43,8 @@
             "description": "Process many files with one operations list in one call. The files run a few at a time, by position, under the account's `batch_concurrency`; each is an ordinary request, and the results can be zipped or written to a prefix of your bucket."
         },
         {
-            "name": "Designs",
-            "description": "An operations list kept on the account under a name, with the logo it uses kept as long as it is. Send its id as `design` on any processing endpoint, a batch or a preview instead of, or before, `operations`."
+            "name": "Templates",
+            "description": "An operations list kept on the account under a name, with the logo it uses kept as long as it is. Send its id as `template` on any processing endpoint, a batch or a preview instead of, or before, `operations`."
         },
         {
             "name": "Requests",
@@ -2517,7 +2517,7 @@
                     "Previews"
                 ],
                 "summary": "Create preview",
-                "description": "One small picture of what operations, or a design, will do to a file: the photo, one frame of a video (`at`) or one page of a document (`page`), reduced to `width` pixels wide, with the operations run on that copy. Pixel arguments are scaled down with it; `anchor`, `margin`, `size` and other percentages need nothing. It waits by default (`wait` 20) and usually runs within the call, so the answer carries the picture: `result.files[0]` is a WebP kept for a day, and `result.data.layout` says where each watermark and text landed, in the preview's pixels, for drawing handles over it.\n\nPrice: {{price:previews}} per request. Failed requests are free.",
+                "description": "One small picture of what operations, or a template, will do to a file: the photo, one frame of a video (`at`) or one page of a document (`page`), reduced to `width` pixels wide, with the operations run on that copy. Pixel arguments are scaled down with it; `anchor`, `margin`, `size` and other percentages need nothing. It waits by default (`wait` 20) and usually runs within the call, so the answer carries the picture: `result.files[0]` is a WebP kept for a day, and `result.data.layout` says where each watermark and text landed, in the preview's pixels, for drawing handles over it.\n\nPrice: {{price:previews}} per request. Failed requests are free.",
                 "operationId": "createPreview",
                 "parameters": [
                     {
@@ -2633,7 +2633,7 @@
                     "Batches"
                 ],
                 "summary": "Create batch",
-                "description": "Run one operations list, or a design, on many files. Every source is checked and the whole batch priced before it is accepted: a prepaid account must hold the estimate (files × the endpoint's price, × outputs), and a test key counts each file toward its requests a day. The files then run as ordinary requests, `batch_concurrency` at a time by position, charged as each succeeds; they do not count against `concurrent_requests`. When the last one is done the hold is released, the results are zipped into parts of at most 4 GB or 1,000 files if `zip` was sent, and `batch.finished` is posted to `webhook_url`.\n\nPrice: each file costs its media's process price (`images/process`, `videos/process` or `documents/process`), and each further output the price of processing an image. Failed and aborted files are free.",
+                "description": "Run one operations list, or a template, on many files. Every source is checked and the whole batch priced before it is accepted: a prepaid account must hold the estimate (files × the endpoint's price, × outputs), and a test key counts each file toward its requests a day. The files then run as ordinary requests, `batch_concurrency` at a time by position, charged as each succeeds; they do not count against `concurrent_requests`. When the last one is done the hold is released, the results are zipped into parts of at most 4 GB or 1,000 files if `zip` was sent, and `batch.finished` is posted to `webhook_url`.\n\nPrice: each file costs its media's process price (`images/process`, `videos/process` or `documents/process`), and each further output the price of processing an image. Failed and aborted files are free.",
                 "operationId": "createBatch",
                 "parameters": [
                     {
@@ -2674,7 +2674,7 @@
                                     },
                                     "progress": 0,
                                     "input": {
-                                        "design": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                                        "template": "tpl_4hT9kLm2PqR7sV1wX3yZ5a",
                                         "output": {
                                             "format": "webp"
                                         },
@@ -2716,7 +2716,7 @@
                                     },
                                     "progress": 16,
                                     "input": {
-                                        "design": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                                        "template": "tpl_4hT9kLm2PqR7sV1wX3yZ5a",
                                         "output": {
                                             "format": "webp"
                                         },
@@ -2882,7 +2882,7 @@
                                     },
                                     "progress": 100,
                                     "input": {
-                                        "design": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                                        "template": "tpl_4hT9kLm2PqR7sV1wX3yZ5a",
                                         "output": {
                                             "format": "webp"
                                         },
@@ -3080,7 +3080,7 @@
                                     },
                                     "progress": 99,
                                     "input": {
-                                        "design": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                                        "template": "tpl_4hT9kLm2PqR7sV1wX3yZ5a",
                                         "output": {
                                             "format": "webp"
                                         },
@@ -3158,7 +3158,7 @@
                                     },
                                     "progress": 100,
                                     "input": {
-                                        "design": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                                        "template": "tpl_4hT9kLm2PqR7sV1wX3yZ5a",
                                         "output": {
                                             "format": "webp"
                                         },
@@ -3192,19 +3192,19 @@
                 }
             }
         },
-        "/v1/designs": {
+        "/v1/templates": {
             "get": {
                 "tags": [
-                    "Designs"
+                    "Templates"
                 ],
-                "summary": "List designs",
-                "description": "The account's designs, newest first.",
-                "operationId": "listDesigns",
+                "summary": "List templates",
+                "description": "The account's templates, newest first.",
+                "operationId": "listTemplates",
                 "parameters": [
                     {
                         "name": "limit",
                         "in": "query",
-                        "description": "How many designs to return.",
+                        "description": "How many templates to return.",
                         "schema": {
                             "type": "integer",
                             "minimum": 1,
@@ -3216,21 +3216,21 @@
                     {
                         "name": "before",
                         "in": "query",
-                        "description": "Only designs made before this one. Pass the last id of a page to get the next one.",
+                        "description": "Only templates made before this one. Pass the last id of a page to get the next one.",
                         "schema": {
                             "type": "string",
-                            "pattern": "^dsn_[A-Za-z0-9]{22}$"
+                            "pattern": "^tpl_[A-Za-z0-9]{22}$"
                         },
-                        "example": "dsn_4Kq9mZt2Rb7xWc1nPl8yVe"
+                        "example": "tpl_4Kq9mZt2Rb7xWc1nPl8yVe"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "A page of designs.",
+                        "description": "A page of templates.",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/DesignList"
+                                    "$ref": "#/components/schemas/TemplateList"
                                 }
                             }
                         }
@@ -3248,28 +3248,28 @@
             },
             "post": {
                 "tags": [
-                    "Designs"
+                    "Templates"
                 ],
-                "summary": "Create design",
-                "description": "Keep an operations list under a name. The operations are checked as a request's would be, for the design's `media` (`any` is checked as an image). A watermark whose `image` is an upload (`upl_…`) or a file (`file_…`) is copied into an asset of the design, which lasts as long as the design does, and the operation then names the asset; an `image_url` stays a URL. An account may keep `max_designs` (`422 too_many_designs` past that). Needs the `designs` scope; using a design needs only `process`.",
-                "operationId": "createDesign",
+                "summary": "Create template",
+                "description": "Keep an operations list under a name. The operations are checked as a request's would be, for the template's `media` (`any` is checked as an image). A watermark whose `image` is an upload (`upl_…`) or a file (`file_…`) is copied into an asset of the template, which lasts as long as the template does, and the operation then names the asset; an `image_url` stays a URL. An account may keep `max_templates` (`422 too_many_templates` past that). Needs the `templates` scope; using a template needs only `process`.",
+                "operationId": "createTemplate",
                 "requestBody": {
                     "required": true,
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/DesignCreateRequest"
+                                "$ref": "#/components/schemas/TemplateCreateRequest"
                             }
                         }
                     }
                 },
                 "responses": {
                     "201": {
-                        "description": "The design, with its assets.",
+                        "description": "The template, with its assets.",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/Design"
+                                    "$ref": "#/components/schemas/Template"
                                 }
                             }
                         }
@@ -3292,34 +3292,34 @@
                 }
             }
         },
-        "/v1/designs/{id}": {
+        "/v1/templates/{id}": {
             "get": {
                 "tags": [
-                    "Designs"
+                    "Templates"
                 ],
-                "summary": "Get design",
-                "description": "One design.",
-                "operationId": "getDesign",
+                "summary": "Get template",
+                "description": "One template.",
+                "operationId": "getTemplate",
                 "parameters": [
                     {
                         "name": "id",
                         "in": "path",
                         "required": true,
-                        "description": "The design's id.",
+                        "description": "The template's id.",
                         "schema": {
                             "type": "string",
-                            "pattern": "^dsn_[A-Za-z0-9]{22}$"
+                            "pattern": "^tpl_[A-Za-z0-9]{22}$"
                         },
-                        "example": "dsn_4hT9kLm2PqR7sV1wX3yZ5a"
+                        "example": "tpl_4hT9kLm2PqR7sV1wX3yZ5a"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "The design.",
+                        "description": "The template.",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/Design"
+                                    "$ref": "#/components/schemas/Template"
                                 }
                             }
                         }
@@ -3337,22 +3337,22 @@
             },
             "patch": {
                 "tags": [
-                    "Designs"
+                    "Templates"
                 ],
-                "summary": "Change design",
+                "summary": "Change template",
                 "description": "Change the name, the media or the operations; what is left out stays. New operations are checked for the media as on create. An upload or file they name becomes an asset, and an asset no operation names any more is deleted. Requests already running keep the operations they started with.",
-                "operationId": "updateDesign",
+                "operationId": "updateTemplate",
                 "parameters": [
                     {
                         "name": "id",
                         "in": "path",
                         "required": true,
-                        "description": "The design's id.",
+                        "description": "The template's id.",
                         "schema": {
                             "type": "string",
-                            "pattern": "^dsn_[A-Za-z0-9]{22}$"
+                            "pattern": "^tpl_[A-Za-z0-9]{22}$"
                         },
-                        "example": "dsn_4hT9kLm2PqR7sV1wX3yZ5a"
+                        "example": "tpl_4hT9kLm2PqR7sV1wX3yZ5a"
                     }
                 ],
                 "requestBody": {
@@ -3360,22 +3360,22 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/DesignUpdateRequest"
+                                "$ref": "#/components/schemas/TemplateUpdateRequest"
                             }
                         }
                     }
                 },
                 "responses": {
                     "200": {
-                        "description": "The changed design.",
+                        "description": "The changed template.",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/Design"
+                                    "$ref": "#/components/schemas/Template"
                                 },
                                 "example": {
-                                    "id": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
-                                    "object": "design",
+                                    "id": "tpl_4hT9kLm2PqR7sV1wX3yZ5a",
+                                    "object": "template",
                                     "name": "Studio corner logo, lighter",
                                     "media": "any",
                                     "livemode": true,
@@ -3418,35 +3418,35 @@
             },
             "delete": {
                 "tags": [
-                    "Designs"
+                    "Templates"
                 ],
-                "summary": "Delete design",
-                "description": "Delete a design and the assets it kept. Requests that named it keep running; new ones get a `404 design_not_found`.",
-                "operationId": "deleteDesign",
+                "summary": "Delete template",
+                "description": "Delete a template and the assets it kept. Requests that named it keep running; new ones get a `404 template_not_found`.",
+                "operationId": "deleteTemplate",
                 "parameters": [
                     {
                         "name": "id",
                         "in": "path",
                         "required": true,
-                        "description": "The design's id.",
+                        "description": "The template's id.",
                         "schema": {
                             "type": "string",
-                            "pattern": "^dsn_[A-Za-z0-9]{22}$"
+                            "pattern": "^tpl_[A-Za-z0-9]{22}$"
                         },
-                        "example": "dsn_4hT9kLm2PqR7sV1wX3yZ5a"
+                        "example": "tpl_4hT9kLm2PqR7sV1wX3yZ5a"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "The design, with `deleted_at`.",
+                        "description": "The template, with `deleted_at`.",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/Design"
+                                    "$ref": "#/components/schemas/Template"
                                 },
                                 "example": {
-                                    "id": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
-                                    "object": "design",
+                                    "id": "tpl_4hT9kLm2PqR7sV1wX3yZ5a",
+                                    "object": "template",
                                     "name": "Studio corner logo",
                                     "media": "any",
                                     "livemode": true,
@@ -5468,13 +5468,13 @@
                             }
                         ]
                     },
-                    "design": {
+                    "template": {
                         "type": "string",
-                        "pattern": "^dsn_[A-Za-z0-9]{22}$",
-                        "description": "A design to run first (`dsn_…`, from `POST /v1/designs`): its operations, then the request's own, if any. A design made for another media is a `422 design_media_mismatch`. See [Designs](https://api.watermark.ws/docs/designs.md)."
+                        "pattern": "^tpl_[A-Za-z0-9]{22}$",
+                        "description": "A template to run first (`tpl_…`, from `POST /v1/templates`): its operations, then the request's own, if any. A template made for another media is a `422 template_media_mismatch`. See [Templates](https://api.watermark.ws/docs/templates.md)."
                     },
                     "operations": {
-                        "description": "Required, unless `design` or `outputs` is sent: then it may be left out, and each output may have its own.",
+                        "description": "Required, unless `template` or `outputs` is sent: then it may be left out, and each output may have its own.",
                         "type": "array",
                         "minItems": 1,
                         "maxItems": 20,
@@ -5714,13 +5714,13 @@
                             }
                         ]
                     },
-                    "design": {
+                    "template": {
                         "type": "string",
-                        "pattern": "^dsn_[A-Za-z0-9]{22}$",
-                        "description": "A design to run first (`dsn_…`, from `POST /v1/designs`): its operations, then the request's own, if any. A design made for another media is a `422 design_media_mismatch`. See [Designs](https://api.watermark.ws/docs/designs.md)."
+                        "pattern": "^tpl_[A-Za-z0-9]{22}$",
+                        "description": "A template to run first (`tpl_…`, from `POST /v1/templates`): its operations, then the request's own, if any. A template made for another media is a `422 template_media_mismatch`. See [Templates](https://api.watermark.ws/docs/templates.md)."
                     },
                     "operations": {
-                        "description": "Required, unless `design` is sent.",
+                        "description": "Required, unless `template` is sent.",
                         "type": "array",
                         "minItems": 1,
                         "maxItems": 20,
@@ -5964,13 +5964,13 @@
                             }
                         ]
                     },
-                    "design": {
+                    "template": {
                         "type": "string",
-                        "pattern": "^dsn_[A-Za-z0-9]{22}$",
-                        "description": "A design to run first (`dsn_…`, from `POST /v1/designs`): its operations, then the request's own, if any. A design made for another media is a `422 design_media_mismatch`. See [Designs](https://api.watermark.ws/docs/designs.md)."
+                        "pattern": "^tpl_[A-Za-z0-9]{22}$",
+                        "description": "A template to run first (`tpl_…`, from `POST /v1/templates`): its operations, then the request's own, if any. A template made for another media is a `422 template_media_mismatch`. See [Templates](https://api.watermark.ws/docs/templates.md)."
                     },
                     "operations": {
-                        "description": "Required, unless `design` is sent.",
+                        "description": "Required, unless `template` is sent.",
                         "type": "array",
                         "minItems": 1,
                         "maxItems": 20,
@@ -6348,14 +6348,14 @@
                         "default": "transparent",
                         "description": "`transparent` or a hex color."
                     },
-                    "design": {
+                    "template": {
                         "type": "string",
-                        "pattern": "^dsn_[A-Za-z0-9]{22}$",
-                        "description": "A design to run first (`dsn_…`, from `POST /v1/designs`): its operations, then the request's own, if any. A design made for another media is a `422 design_media_mismatch`. See [Designs](https://api.watermark.ws/docs/designs.md)."
+                        "pattern": "^tpl_[A-Za-z0-9]{22}$",
+                        "description": "A template to run first (`tpl_…`, from `POST /v1/templates`): its operations, then the request's own, if any. A template made for another media is a `422 template_media_mismatch`. See [Templates](https://api.watermark.ws/docs/templates.md)."
                     },
                     "operations": {
                         "minItems": 0,
-                        "description": "What to draw on the canvas. Required, unless `design` is sent. Run in order, top to bottom. See [Operations](https://api.watermark.ws/docs/operations.md).",
+                        "description": "What to draw on the canvas. Required, unless `template` is sent. Run in order, top to bottom. See [Operations](https://api.watermark.ws/docs/operations.md).",
                         "type": "array",
                         "maxItems": 20,
                         "items": {
@@ -7030,13 +7030,13 @@
                         "default": "image",
                         "description": "What the source is, which decides the operations allowed and how the picture is taken."
                     },
-                    "design": {
+                    "template": {
                         "type": "string",
-                        "pattern": "^dsn_[A-Za-z0-9]{22}$",
-                        "description": "A design to run first (`dsn_…`, from `POST /v1/designs`): its operations, then the request's own, if any. A design made for another media is a `422 design_media_mismatch`. See [Designs](https://api.watermark.ws/docs/designs.md)."
+                        "pattern": "^tpl_[A-Za-z0-9]{22}$",
+                        "description": "A template to run first (`tpl_…`, from `POST /v1/templates`): its operations, then the request's own, if any. A template made for another media is a `422 template_media_mismatch`. See [Templates](https://api.watermark.ws/docs/templates.md)."
                     },
                     "operations": {
-                        "description": "The operations to show, for the `media`. Required, unless `design` is sent.",
+                        "description": "The operations to show, for the `media`. Required, unless `template` is sent.",
                         "type": "array",
                         "minItems": 1,
                         "maxItems": 20,
@@ -7223,13 +7223,13 @@
                             ]
                         }
                     },
-                    "design": {
+                    "template": {
                         "type": "string",
-                        "pattern": "^dsn_[A-Za-z0-9]{22}$",
-                        "description": "A design to run first (`dsn_…`, from `POST /v1/designs`): its operations, then the request's own, if any. A design made for another media is a `422 design_media_mismatch`. See [Designs](https://api.watermark.ws/docs/designs.md)."
+                        "pattern": "^tpl_[A-Za-z0-9]{22}$",
+                        "description": "A template to run first (`tpl_…`, from `POST /v1/templates`): its operations, then the request's own, if any. A template made for another media is a `422 template_media_mismatch`. See [Templates](https://api.watermark.ws/docs/templates.md)."
                     },
                     "operations": {
-                        "description": "Run on every file, for the `media`. Required, unless `design` is sent.",
+                        "description": "Run on every file, for the `media`. Required, unless `template` is sent.",
                         "type": "array",
                         "minItems": 1,
                         "maxItems": 20,
@@ -7427,7 +7427,7 @@
                     },
                     "progress": 16,
                     "input": {
-                        "design": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
+                        "template": "tpl_4hT9kLm2PqR7sV1wX3yZ5a",
                         "output": {
                             "format": "webp"
                         },
@@ -7517,11 +7517,11 @@
                     },
                     "input": {
                         "type": "object",
-                        "description": "What was sent: the design, the operations, the output, the destination, `max_duration`, `max_pages` and `zip`, those that were.",
+                        "description": "What was sent: the template, the operations, the output, the destination, `max_duration`, `max_pages` and `zip`, those that were.",
                         "properties": {
-                            "design": {
+                            "template": {
                                 "type": "string",
-                                "description": "The design's id, when one was sent."
+                                "description": "The template's id, when one was sent."
                             },
                             "operations": {
                                 "type": "array",
@@ -7664,7 +7664,7 @@
                     }
                 }
             },
-            "DesignCreateRequest": {
+            "TemplateCreateRequest": {
                 "type": "object",
                 "required": [
                     "name",
@@ -7698,7 +7698,7 @@
                             "any"
                         ],
                         "default": "any",
-                        "description": "What the design is for. `any` suits every endpoint, so its operations must be ones every media takes, such as `watermark`."
+                        "description": "What the template is for. `any` suits every endpoint, so its operations must be ones every media takes, such as `watermark`."
                     },
                     "operations": {
                         "type": "array",
@@ -7718,11 +7718,11 @@
                                 }
                             ]
                         },
-                        "description": "The operations, as a request sends them. A watermark's `image` may be an upload (`upl_…`) or a file (`file_…`): it is copied into an asset the design keeps, and the stored operation names the asset. See [Operations](https://api.watermark.ws/docs/operations.md)."
+                        "description": "The operations, as a request sends them. A watermark's `image` may be an upload (`upl_…`) or a file (`file_…`): it is copied into an asset the template keeps, and the stored operation names the asset. See [Operations](https://api.watermark.ws/docs/operations.md)."
                     }
                 }
             },
-            "DesignUpdateRequest": {
+            "TemplateUpdateRequest": {
                 "type": "object",
                 "description": "At least one of these.",
                 "example": {
@@ -7752,7 +7752,7 @@
                             "document",
                             "any"
                         ],
-                        "description": "What the design is for; its operations must suit it."
+                        "description": "What the template is for; its operations must suit it."
                     },
                     "operations": {
                         "type": "array",
@@ -7776,7 +7776,7 @@
                     }
                 }
             },
-            "Design": {
+            "Template": {
                 "type": "object",
                 "required": [
                     "id",
@@ -7790,8 +7790,8 @@
                     "updated_at"
                 ],
                 "example": {
-                    "id": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
-                    "object": "design",
+                    "id": "tpl_4hT9kLm2PqR7sV1wX3yZ5a",
+                    "object": "template",
                     "name": "Studio corner logo",
                     "media": "any",
                     "livemode": true,
@@ -7818,12 +7818,12 @@
                 "properties": {
                     "id": {
                         "type": "string",
-                        "description": "Starts `dsn_`. Send it as `design` on a processing endpoint, a batch or a preview."
+                        "description": "Starts `tpl_`. Send it as `template` on a processing endpoint, a batch or a preview."
                     },
                     "object": {
                         "type": "string",
-                        "const": "design",
-                        "description": "Always `design`."
+                        "const": "template",
+                        "description": "Always `template`."
                     },
                     "name": {
                         "type": "string",
@@ -7837,11 +7837,11 @@
                             "document",
                             "any"
                         ],
-                        "description": "What the design is for."
+                        "description": "What the template is for."
                     },
                     "livemode": {
                         "type": "boolean",
-                        "description": "`false` for a design made with a test key."
+                        "description": "`false` for a template made with a test key."
                     },
                     "operations": {
                         "type": "array",
@@ -7852,7 +7852,7 @@
                     },
                     "assets": {
                         "type": "array",
-                        "description": "The files the design keeps, for as long as it exists.",
+                        "description": "The files the template keeps, for as long as it exists.",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -7886,14 +7886,14 @@
                     }
                 }
             },
-            "DesignList": {
+            "TemplateList": {
                 "type": "object",
                 "example": {
                     "object": "list",
                     "data": [
                         {
-                            "id": "dsn_4hT9kLm2PqR7sV1wX3yZ5a",
-                            "object": "design",
+                            "id": "tpl_4hT9kLm2PqR7sV1wX3yZ5a",
+                            "object": "template",
                             "name": "Studio corner logo",
                             "media": "any",
                             "livemode": true,
@@ -7928,7 +7928,7 @@
                     "data": {
                         "type": "array",
                         "items": {
-                            "$ref": "#/components/schemas/Design"
+                            "$ref": "#/components/schemas/Template"
                         }
                     },
                     "has_more": {
@@ -8553,7 +8553,7 @@
                         "max_operations": 20,
                         "batch_max_files": 5000,
                         "batch_concurrency": 20,
-                        "max_designs": 200
+                        "max_templates": 200
                     },
                     "suspended": false,
                     "created_at": "2026-10-11T14:52:10Z"
@@ -8629,9 +8629,9 @@
                                 "type": "integer",
                                 "description": "How many files of the account's batches run at once, apart from `concurrent_requests`."
                             },
-                            "max_designs": {
+                            "max_templates": {
                                 "type": "integer",
-                                "description": "How many designs the account may keep."
+                                "description": "How many templates the account may keep."
                             },
                             "requests_per_day": {
                                 "type": "integer",

@@ -252,7 +252,7 @@ test('batch create uploads local files, sends a storage prefix, waits until part
       { id: 'file_bbbbbbbbbbbbbbbbbbbbbb', object: 'file', name: 'batch-42-2', format: 'zip', size: 12, files: 1, url: 'https://results.test/42-2.zip?sig=2', url_expires_at: 'soon' },
     ];
     const { code, out: printed, err, calls } = await run(
-      ['batch', 'create', photo, 'https://example.com/b.jpg', 'stg_7a:photos/', '--design', 'dsn_4hT9kLm2PqR7sV1wX3yZ5a', '--op', 'resize:width=1600,height=1600', '--format', 'webp', '--out', out],
+      ['batch', 'create', photo, 'https://example.com/b.jpg', 'stg_7a:photos/', '--template', 'tpl_4hT9kLm2PqR7sV1wX3yZ5a', '--op', 'resize:width=1600,height=1600', '--format', 'webp', '--out', out],
       [
         { status: 201, body: { id: 'upl_aaaaaaaaaaaaaaaaaaaaaa', status: 'pending', upload: { method: 'PUT', url: 'https://bucket.test/u?sig=1', headers: { 'Content-Type': 'image/jpeg' } } } },
         { status: 200, body: '' },
@@ -270,7 +270,7 @@ test('batch create uploads local files, sends a storage prefix, waits until part
     assert.equal(calls[2].url, 'https://api.test/v1/batches');
     assert.deepEqual(calls[2].body, {
       sources: ['upl_aaaaaaaaaaaaaaaaaaaaaa', 'https://example.com/b.jpg', { storage: 'stg_7a', prefix: 'photos/' }],
-      design: 'dsn_4hT9kLm2PqR7sV1wX3yZ5a',
+      template: 'tpl_4hT9kLm2PqR7sV1wX3yZ5a',
       operations: [{ type: 'resize', width: 1600, height: 1600 }],
       output: { format: 'webp' },
       zip: true,
@@ -368,7 +368,7 @@ test('batch get, requests, retry, abort and batches reach their endpoints, and g
   const failed = await run(['batch', 'requests', '42', '--status', 'failed'], [{ body: { data: [{ id: 7, position: 3, status: 'failed', error: { code: 'unsupported_media', message: 'Not an image.' } }], has_more: true } }]);
   assert.match(failed.out, /^3\t7\tfailed\tunsupported_media: Not an image\.\nMore: watermark batch requests 42 --after 3 --status failed/);
 
-  const wrong = await run(['batch', 'get', 'dsn_x'], []);
+  const wrong = await run(['batch', 'get', 'tpl_x'], []);
   assert.equal(wrong.code, 2);
   assert.equal(wrong.calls.length, 0);
 
@@ -402,49 +402,49 @@ test('preview posts the media, frame, page and width, waits only when needed, an
   assert.match(out, /Request 9 \(previews\): succeeded\nResult: .*"layout"/);
   await rm(path);
 
-  const queued = await run(['preview', 'https://example.com/a.pdf', '--media', 'document', '--page', '2', '--design', 'dsn_4hT9kLm2PqR7sV1wX3yZ5a', '--json'], [
+  const queued = await run(['preview', 'https://example.com/a.pdf', '--media', 'document', '--page', '2', '--template', 'tpl_4hT9kLm2PqR7sV1wX3yZ5a', '--json'], [
     { status: 202, body: { id: 10, status: 'queued', endpoint: 'previews' } },
     { body: { id: 10, status: 'succeeded', endpoint: 'previews' } },
   ]);
-  assert.deepEqual(queued.calls[0].body, { source: 'https://example.com/a.pdf', media: 'document', design: 'dsn_4hT9kLm2PqR7sV1wX3yZ5a', page: 2 });
+  assert.deepEqual(queued.calls[0].body, { source: 'https://example.com/a.pdf', media: 'document', template: 'tpl_4hT9kLm2PqR7sV1wX3yZ5a', page: 2 });
   assert.equal(queued.calls[1].url, 'https://api.test/v1/requests/10?wait=25');
 });
 
-test('a design is created, listed, changed and deleted, and --design makes --op optional', async () => {
-  const design = { id: 'dsn_4hT9kLm2PqR7sV1wX3yZ5a', object: 'design', name: 'Corner logo', media: 'any', operations: [{ type: 'watermark', image: 'file_6dM3nP8qR1sT4uV7wX0yZ2', anchor: 'bottom_right', margin: '3%', size: '18%', opacity: 60 }], assets: [{ id: 'file_6dM3nP8qR1sT4uV7wX0yZ2', format: 'png', size: 48213 }] };
+test('a template is created, listed, changed and deleted, and --template makes --op optional', async () => {
+  const template = { id: 'tpl_4hT9kLm2PqR7sV1wX3yZ5a', object: 'template', name: 'Corner logo', media: 'any', operations: [{ type: 'watermark', image: 'file_6dM3nP8qR1sT4uV7wX0yZ2', anchor: 'bottom_right', margin: '3%', size: '18%', opacity: 60 }], assets: [{ id: 'file_6dM3nP8qR1sT4uV7wX0yZ2', format: 'png', size: 48213 }] };
 
-  const created = await run(['design', 'create', '--name', 'Corner logo', '--op', 'watermark:image=upl_9f3Tq1LmA2bC4dE6fG8hJ0,anchor=bottom_right,margin=3%,size=18%,opacity=60'], [{ status: 201, body: design }]);
+  const created = await run(['template', 'create', '--name', 'Corner logo', '--op', 'watermark:image=upl_9f3Tq1LmA2bC4dE6fG8hJ0,anchor=bottom_right,margin=3%,size=18%,opacity=60'], [{ status: 201, body: template }]);
   assert.equal(created.code, 0);
-  assert.equal(created.calls[0].url, 'https://api.test/v1/designs');
+  assert.equal(created.calls[0].url, 'https://api.test/v1/templates');
   assert.deepEqual(created.calls[0].body, { name: 'Corner logo', operations: [{ type: 'watermark', image: 'upl_9f3Tq1LmA2bC4dE6fG8hJ0', anchor: 'bottom_right', margin: '3%', size: '18%', opacity: 60 }] });
-  assert.match(created.out, /^Design dsn_4hT9kLm2PqR7sV1wX3yZ5a: Corner logo \(any\)\nOperations: \[.*"anchor":"bottom_right".*\]\nAsset: file_6dM3nP8qR1sT4uV7wX0yZ2 \(png, 48213 bytes\)/);
+  assert.match(created.out, /^Template tpl_4hT9kLm2PqR7sV1wX3yZ5a: Corner logo \(any\)\nOperations: \[.*"anchor":"bottom_right".*\]\nAsset: file_6dM3nP8qR1sT4uV7wX0yZ2 \(png, 48213 bytes\)/);
 
-  const listed = await run(['designs', '--limit', '5', '--json'], [{ body: { object: 'list', data: [design], has_more: false } }]);
-  assert.equal(listed.calls[0].url, 'https://api.test/v1/designs?limit=5');
-  assert.equal(JSON.parse(listed.out).data[0].id, design.id);
+  const listed = await run(['templates', '--limit', '5', '--json'], [{ body: { object: 'list', data: [template], has_more: false } }]);
+  assert.equal(listed.calls[0].url, 'https://api.test/v1/templates?limit=5');
+  assert.equal(JSON.parse(listed.out).data[0].id, template.id);
 
-  const updated = await run(['design', 'update', design.id, '--name', 'Lighter', '--media', 'image', '--json'], [{ body: design }]);
+  const updated = await run(['template', 'update', template.id, '--name', 'Lighter', '--media', 'image', '--json'], [{ body: template }]);
   assert.equal(updated.calls[0].method, 'PATCH');
   assert.deepEqual(updated.calls[0].body, { name: 'Lighter', media: 'image' });
 
-  const deleted = await run(['design', 'delete', design.id], [{ body: { ...design, deleted_at: '2026-10-16T09:00:00Z' } }]);
+  const deleted = await run(['template', 'delete', template.id], [{ body: { ...template, deleted_at: '2026-10-16T09:00:00Z' } }]);
   assert.equal(deleted.calls[0].method, 'DELETE');
   assert.match(deleted.out, /Deleted 2026-10-16T09:00:00Z/);
 
-  const empty = await run(['design', 'update', design.id], []);
+  const empty = await run(['template', 'update', template.id], []);
   assert.equal(empty.code, 2);
   assert.match(empty.err, /needs something to change/);
 
-  const used = await run(['image', 'process', 'https://example.com/a.jpg', '--design', design.id, '--format', 'webp', '--no-wait', '--json'], [{ status: 202, body: { id: 11, status: 'queued' } }]);
-  assert.deepEqual(used.calls[0].body, { source: 'https://example.com/a.jpg', design: design.id, output: { format: 'webp' } });
+  const used = await run(['image', 'process', 'https://example.com/a.jpg', '--template', template.id, '--format', 'webp', '--no-wait', '--json'], [{ status: 202, body: { id: 11, status: 'queued' } }]);
+  assert.deepEqual(used.calls[0].body, { source: 'https://example.com/a.jpg', template: template.id, output: { format: 'webp' } });
 
   const neither = await run(['image', 'process', 'https://example.com/a.jpg'], []);
   assert.equal(neither.code, 2);
-  assert.match(neither.err, /at least one --op .*or a --design/);
+  assert.match(neither.err, /at least one --op .*or a --template/);
 
-  const bad = await run(['video', 'process', 'https://example.com/a.mp4', '--design', 'dsn_short'], []);
+  const bad = await run(['video', 'process', 'https://example.com/a.mp4', '--template', 'tpl_short'], []);
   assert.equal(bad.code, 2);
-  assert.match(bad.err, /--design takes a design id/);
+  assert.match(bad.err, /--template takes a template id/);
 });
 
 test('batch get --out fetches the zips of a finished batch, and a broken download leaves no file behind', async () => {

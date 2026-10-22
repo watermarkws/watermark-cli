@@ -21,8 +21,8 @@ const COMMANDS = {
   preview: null,
   batch: ['create', 'get', 'requests', 'retry', 'abort'],
   batches: [],
-  design: ['create', 'update', 'get', 'delete'],
-  designs: [],
+  template: ['create', 'update', 'get', 'delete'],
+  templates: [],
   operations: ['image', 'video', 'document'],
   requests: [],
   account: [],
@@ -110,13 +110,13 @@ for (const line of lines) {
       assert.ok(positionals[2], 'needs a source');
     }
     if (action === 'process' || command === 'preview' || (command === 'batch' && action === 'create')) {
-      assert.ok(options.op.length || options['ops-json'] || options.design, `${command} ${action} needs --op, --ops-json or --design`);
+      assert.ok(options.op.length || options['ops-json'] || options.template, `${command} ${action} needs --op, --ops-json or --template`);
     }
     if (command === 'image' && action === 'create') {
       assert.ok(options.width && options.height, 'create needs --width and --height');
     }
     if (command === 'batch' && action === 'create') assert.ok(positionals[2], 'batch create needs a source');
-    if (command === 'design' && action === 'create') assert.ok(options.name && options.op.length, 'design create needs --name and --op');
+    if (command === 'template' && action === 'create') assert.ok(options.name && options.op.length, 'template create needs --name and --op');
     if (action === 'screenshot') assert.ok(options.seconds, 'screenshot needs --seconds');
 
     for (const name of Object.keys(options)) {
