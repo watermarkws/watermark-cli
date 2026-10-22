@@ -4,7 +4,7 @@
         "title": "Watermark API",
         "version": "1.0.0",
         "summary": "Watermark, resize and convert images, videos and PDFs.",
-        "description": "Send a URL and a list of operations; the API processes the file in the background and returns a link to the result.\n\nEvery processing endpoint answers `202` with a request in status `queued`. Poll `GET /v1/requests/{id}` or pass `webhook_url`.\n\n**[See every operation, with the request to send and a picture of the result](https://api.watermark.ws/docs/operations)**\n\nDocs: https://api.watermark.ws/docs · As Markdown, for AI agents: https://api.watermark.ws/llms.txt",
+        "description": "Send a file and a list of operations; the API processes the file in the background and returns a link to the result. Built for jobs a local script does badly: batches of hundreds of files, video, PDF and Word documents that keep their type, HEIC and camera RAW photos, text in real fonts, and delivery straight to your own S3 bucket.\n\nThe file is a public URL, an upload (`POST /v1/uploads`, for a file that is not on the web), a file an earlier request made (`file_…`) or an object in a connected bucket. Never send a file's bytes in a request body.\n\nEvery processing endpoint answers `202` with a request in status `queued`; send `wait` (up to 25 seconds) to get `200` with the finished request when it is quick. Otherwise poll `GET /v1/requests/{id}` or pass `webhook_url`. Download `result.files[0].url`; failed requests are free.\n\n**[See every operation, with the request to send and a picture of the result](https://api.watermark.ws/docs/operations)**\n\nDocs: https://api.watermark.ws/docs · For AI agents: https://api.watermark.ws/docs/agents · As Markdown: https://api.watermark.ws/llms.txt",
         "contact": {
             "name": "Watermark support",
             "email": "support@watermark.ws",
@@ -24,15 +24,15 @@
     "tags": [
         {
             "name": "Images",
-            "description": "JPEG, PNG, GIF, WebP, TIFF, BMP, HEIC, AVIF, SVG, PSD and camera RAW in; JPEG, PNG, WebP, GIF, TIFF or BMP out."
+            "description": "Watermark, resize, crop, filter, draw text and convert photos, one or hundreds at a time. JPEG, PNG, GIF, WebP, TIFF, BMP, HEIC, AVIF, SVG, PSD and camera RAW in; JPEG, PNG, WebP, GIF, TIFF or BMP out."
         },
         {
             "name": "Videos",
-            "description": "MP4, MOV, WebM, MKV, AVI, FLV, WMV, MPEG and MPEG-TS in; MP4, MOV, M4V, MKV, WebM, AVI, MPEG, FLV or WMV out. Needs an account that has bought credits."
+            "description": "Watermark every frame, resize, crop, rotate and re-encode, or save one frame as an image. MP4, MOV, WebM, MKV, AVI, FLV, WMV, MPEG and MPEG-TS in; MP4, MOV, M4V, MKV, WebM, AVI, MPEG, FLV or WMV out. Needs an account that has bought credits."
         },
         {
             "name": "Documents",
-            "description": "PDF and Word (DOCX) in; a PDF stays a PDF and a Word file a Word file. Snapshots are images."
+            "description": "Watermark every page, or render one page as an image. PDF and Word (DOCX) in; a PDF stays a PDF and a Word file a Word file. Snapshots are images."
         },
         {
             "name": "Requests",
@@ -44,11 +44,11 @@
         },
         {
             "name": "Uploads",
-            "description": "Upload a file to the API for a request to read, when it is not on the web."
+            "description": "Upload a file to the API for a request to read, when it is not on the web: a file in your workspace, attached to a chat or on the user's computer."
         },
         {
             "name": "Storage",
-            "description": "Connect a bucket of your own, so requests read from it and write to it."
+            "description": "Connect a bucket of your own, so requests read from it and results are delivered into it instead of through a download link."
         },
         {
             "name": "Account",
