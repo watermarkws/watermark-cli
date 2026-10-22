@@ -4754,6 +4754,11 @@
                         "minimum": -360,
                         "maximum": 360,
                         "default": 0
+                    },
+                    "tint": {
+                        "description": "Paint the whole image this one color, keeping its transparency: a white logo for dark photos, say. A hex color, such as \"#ffffff\" or \"#fff\".",
+                        "type": "string",
+                        "pattern": "^#?([0-9A-Fa-f]{3}){1,2}$"
                     }
                 },
                 "additionalProperties": false
