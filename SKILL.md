@@ -81,7 +81,7 @@ A failed request has `"status": "failed"` and `error.code` / `error.message`. An
 ## Rules
 
 - Never paste file contents or base64 into a command; give the path and the CLI uploads it. Never ask the user to host a local file first.
-- Credit is prepaid and every finished request is charged ($0.002 an image, $0.004 a document page, $0.02 a started minute of video). Before more than about 20 files, a video over about 10 minutes, or a document with hundreds of pages, tell the user the cost and ask.
+- Credit is prepaid and every finished request is charged ($0.002 an image, $0.005 a document page, $0.03 a started minute of video). Before more than about 20 files, a video over about 10 minutes, or a document with hundreds of pages, tell the user the cost and ask.
 - Failed and aborted requests are free; fix the cause (the message names the field) and run again. Rate limits and server errors are retried by the CLI itself.
 - Always pass `--out` when the user wants the file, and `--json` when a script reads the result. Download links in `result.files[].url` last 7 days; `watermark file get <file_id>` gives a fresh one while the file is kept.
 - Video needs a live key on an account that has bought credit; a test key gets `402 paid_account_required`.
