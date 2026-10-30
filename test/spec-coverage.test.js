@@ -40,7 +40,7 @@ const COVERAGE = {
   'POST /v1/images/create': { runs: [['image', 'create', '--width', '10', '--height', '10', '--background', '#ffffff', '--op', 'text:text=Hi', '--format', 'png', ...NO_WAIT], ['image', 'create', '--width', '10', '--height', '10', '--op', 'text:text=Hi', ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
   'POST /v1/videos/process': { runs: [['video', 'process', URL_SOURCE, '--op', 'grayscale', '--max-duration', '5', '--format', 'mp4', ...NO_WAIT], ['video', 'process', URL_SOURCE, '--op', 'grayscale', ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
   'POST /v1/videos/read': { runs: [['video', 'read', URL_SOURCE, ...NO_WAIT]], allow: { wait: WAIT } },
-  'POST /v1/videos/screenshot': { runs: [['video', 'screenshot', URL_SOURCE, '--seconds', '1', '--format', 'png', ...NO_WAIT], ['video', 'screenshot', URL_SOURCE, '--seconds', '1', ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
+  'POST /v1/videos/screenshot': { runs: [['video', 'screenshot', URL_SOURCE, '--seconds', '1', '--auto', '--format', 'png', ...NO_WAIT], ['video', 'screenshot', URL_SOURCE, '--seconds', '1', ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
   'POST /v1/documents/process': { runs: [['document', 'process', URL_SOURCE, '--op', 'grayscale', '--max-pages', '2', ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
   'POST /v1/documents/read': { runs: [['document', 'read', URL_SOURCE, ...NO_WAIT]], allow: { wait: WAIT } },
   'POST /v1/documents/snapshot': { runs: [['document', 'snapshot', URL_SOURCE, '--page', '1', '--format', 'png', ...NO_WAIT], ['document', 'snapshot', URL_SOURCE, ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },

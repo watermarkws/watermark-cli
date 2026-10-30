@@ -9,7 +9,7 @@ Usage:
   watermark image create --width 1200 --height 300 [--background "#ffffff"] --op <operation> [--out file]
   watermark video process <source> --op <operation> [--max-duration 30] [--out file]
   watermark video read <source>
-  watermark video screenshot <source> --seconds 5 [--format png] [--out file]
+  watermark video screenshot <source> --seconds 5 [--auto] [--format png] [--out file]
   watermark document process <source> --op <operation> [--max-pages 10] [--out file]
   watermark document read <source>
   watermark document snapshot <source> [--page 1] [--format png] [--out file]
@@ -62,7 +62,7 @@ const ACTIONS = {
   documents: ['process', 'read', 'snapshot'],
 };
 const REPEATABLE = new Set(['op', 'metadata', 'prefix', 'event']);
-const FLAGS = new Set(['json', 'no-wait', 'help', 'version', 'level']);
+const FLAGS = new Set(['json', 'no-wait', 'help', 'version', 'level', 'auto']);
 
 // Parse argv into positionals and options; repeatable options collect arrays.
 export function parseArgs(argv) {
@@ -284,6 +284,11 @@ async function runMedia(api, media, [action, source], options, { output, print, 
   if (options.level) {
     if (media !== 'images' || action !== 'read') throw new UsageError('--level is for watermark image read.');
     body.level = true;
+  }
+
+  if (options.auto) {
+    if (media !== 'videos' || action !== 'screenshot') throw new UsageError('--auto is for watermark video screenshot.');
+    body.auto = true;
   }
 
   if (action === 'process' || action === 'create') {

@@ -216,6 +216,18 @@ test('image read can find the level angle, and --level is refused elsewhere', as
   assert.match(wrong.err, /--level is for watermark image read/);
 });
 
+test('a screenshot can pass over a blank frame with --auto, and --auto is refused elsewhere', async () => {
+  const { calls } = await run(['video', 'screenshot', 'https://example.com/a.mp4', '--seconds', '0', '--auto', '--format', 'jpg', '--no-wait', '--json'], [{ status: 202, body: { id: 5, status: 'queued' } }]);
+  assert.deepEqual(calls[0].body, { source: 'https://example.com/a.mp4', output: { format: 'jpg' }, seconds: 0, auto: true });
+
+  const plain = await run(['video', 'screenshot', 'https://example.com/a.mp4', '--seconds', '3', '--no-wait', '--json'], [{ status: 202, body: { id: 6, status: 'queued' } }]);
+  assert.equal('auto' in plain.calls[0].body, false);
+
+  const wrong = await run(['document', 'snapshot', 'https://example.com/a.pdf', '--auto'], []);
+  assert.equal(wrong.code, 2);
+  assert.match(wrong.err, /--auto is for watermark video screenshot/);
+});
+
 test('webhook events and several outputs are sent', async () => {
   const outputs = [{ name: 'large', format: 'webp' }, { name: 'thumb', operations: [{ type: 'resize', width: 200, height: 200 }] }];
   const { calls } = await run(['image', 'process', 'https://example.com/a.jpg', '--op', 'grayscale', '--outputs-json', JSON.stringify(outputs), '--event', 'request.progress', '--event', 'request.succeeded', '--no-wait', '--json'], [{ status: 202, body: { id: 5, status: 'queued' } }]);

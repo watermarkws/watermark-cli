@@ -28,7 +28,7 @@ watermark image process <source> --op <operation> [--op ...] [--format webp] [--
 watermark image read <source> [--level]   # --level also finds the angle that levels a tilted horizon
 watermark image create --width 1200 --height 300 --op 'text:text=Hi,font=inter-bold,size=96' --op trim --out logo.png
 watermark video process <source> --op <operation> [--max-duration 30] [--out file]
-watermark video read <source> | watermark video screenshot <source> --seconds 5
+watermark video read <source> | watermark video screenshot <source> --seconds 5 [--auto]   # --auto takes another frame when that one is blank
 watermark document process <source> --op <operation> [--max-pages 10] [--out file]
 watermark document read <source> | watermark document snapshot <source> --page 1
 watermark request get <id> | watermark request abort <id>

@@ -2568,7 +2568,7 @@
             "post": {
                 "summary": "request.progress",
                 "operationId": "requestProgress",
-                "description": "A request moved on while it runs: `progress`, `stage` or `runtime` changed. Only when the request asked for it in `events`; at most one every 2 seconds, and only once progress moved 5 points. Signed in the `Watermark-Signature` header: `t=<unix time>,v1=<HMAC-SHA256 of \"<t>.<body>\" with your webhook secret>`.",
+                "description": "A request moved on while it runs: `progress`, `stage` or `runtime` changed. Only when the request asked for it in `events`; at most one every 2 seconds, and only once progress changed. Signed in the `Watermark-Signature` header: `t=<unix time>,v1=<HMAC-SHA256 of \"<t>.<body>\" with your webhook secret>`.",
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -3793,13 +3793,13 @@
                         "description": "The width in pixels.",
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": 65535
+                        "maximum": 8192
                     },
                     "height": {
                         "description": "The height in pixels.",
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": 65535
+                        "maximum": 8192
                     },
                     "preserve_aspect_ratio": {
                         "description": "Fit inside the box instead of stretching to it.",
@@ -3950,25 +3950,25 @@
                         "description": "Top border in pixels.",
                         "type": "integer",
                         "minimum": 0,
-                        "maximum": 65535
+                        "maximum": 4096
                     },
                     "bottom": {
                         "description": "Bottom border in pixels.",
                         "type": "integer",
                         "minimum": 0,
-                        "maximum": 65535
+                        "maximum": 4096
                     },
                     "left": {
                         "description": "Left border in pixels.",
                         "type": "integer",
                         "minimum": 0,
-                        "maximum": 65535
+                        "maximum": 4096
                     },
                     "right": {
                         "description": "Right border in pixels.",
                         "type": "integer",
                         "minimum": 0,
-                        "maximum": 65535
+                        "maximum": 4096
                     },
                     "color": {
                         "description": "The border color. A hex color, such as \"#ffffff\" or \"#fff\".",
@@ -5336,6 +5336,11 @@
                         "minimum": 0,
                         "maximum": 86400,
                         "description": "Which moment, in seconds from the start."
+                    },
+                    "auto": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Treat `seconds` as a preference: when the frame there is blank (a black or white opening, a fade), take one from 10% of the way in, or failing that the middle. The result's `data.seconds` says which moment was used."
                     },
                     "outputs": {
                         "type": "array",
