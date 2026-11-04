@@ -1000,7 +1000,7 @@
                             },
                             "examples": {
                                 "watermark-pdf": {
-                                    "summary": "Watermark: On every page of a PDF, with diagonal lines",
+                                    "summary": "Watermark: On every page of a PDF",
                                     "value": {
                                         "source": "https://example.com/contract.pdf",
                                         "operations": [
@@ -1008,9 +1008,7 @@
                                                 "type": "watermark",
                                                 "image_url": "https://example.com/logo.png",
                                                 "x": 148,
-                                                "y": 712,
-                                                "diagonal_lines_color": "#c0392b",
-                                                "diagonal_lines_opacity": 35
+                                                "y": 712
                                             }
                                         ]
                                     }
@@ -2902,17 +2900,6 @@
                         "type": "number",
                         "minimum": 0,
                         "maximum": 65535
-                    },
-                    "diagonal_lines_color": {
-                        "description": "Also draw two diagonal lines corner to corner in this color. A hex color, such as \"#ffffff\" or \"#fff\".",
-                        "type": "string",
-                        "pattern": "^#?([0-9A-Fa-f]{3}){1,2}$"
-                    },
-                    "diagonal_lines_opacity": {
-                        "description": "Opacity of the diagonal lines, 0-100.",
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 100
                     }
                 },
                 "additionalProperties": false
@@ -4033,17 +4020,6 @@
                         "type": "number",
                         "minimum": 0,
                         "maximum": 65535
-                    },
-                    "diagonal_lines_color": {
-                        "description": "Also draw two diagonal lines corner to corner in this color. A hex color, such as \"#ffffff\" or \"#fff\".",
-                        "type": "string",
-                        "pattern": "^#?([0-9A-Fa-f]{3}){1,2}$"
-                    },
-                    "diagonal_lines_opacity": {
-                        "description": "Opacity of the diagonal lines, 0-100.",
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 100
                     }
                 },
                 "additionalProperties": false
@@ -4141,17 +4117,6 @@
                         "type": "number",
                         "minimum": 0,
                         "maximum": 65535
-                    },
-                    "diagonal_lines_color": {
-                        "description": "Also draw two diagonal lines corner to corner in this color. A hex color, such as \"#ffffff\" or \"#fff\".",
-                        "type": "string",
-                        "pattern": "^#?([0-9A-Fa-f]{3}){1,2}$"
-                    },
-                    "diagonal_lines_opacity": {
-                        "description": "Opacity of the diagonal lines, 0-100.",
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 100
                     },
                     "density": {
                         "description": "The watermark image's pixels per inch: 72 (the default) places it at one pixel per point; a larger image with a matching density lands at the same size, sharper.",
@@ -4683,9 +4648,7 @@
                             "type": "watermark",
                             "image_url": "https://example.com/logo.png",
                             "x": 36,
-                            "y": 36,
-                            "diagonal_lines_color": "#c0c0c0",
-                            "diagonal_lines_opacity": 40
+                            "y": 36
                         }
                     ]
                 },
