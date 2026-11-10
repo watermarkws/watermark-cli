@@ -228,6 +228,27 @@ test('a screenshot can pass over a blank frame with --auto, and --auto is refuse
   assert.match(wrong.err, /--auto is for watermark video screenshot/);
 });
 
+test('a snapshot can keep a logo see-through and trim it, and those options are refused elsewhere', async () => {
+  const { calls } = await run(['document', 'snapshot', 'https://example.com/logo.pdf', '--background', 'transparent', '--trim', '--format', 'png', '--no-wait', '--json'], [{ status: 202, body: { id: 5, status: 'queued' } }]);
+  assert.deepEqual(calls[0].body, { source: 'https://example.com/logo.pdf', output: { format: 'png' }, background: 'transparent', trim: true });
+
+  const plain = await run(['document', 'snapshot', 'https://example.com/a.pdf', '--page', '2', '--no-wait', '--json'], [{ status: 202, body: { id: 6, status: 'queued' } }]);
+  assert.equal('background' in plain.calls[0].body, false);
+  assert.equal('trim' in plain.calls[0].body, false);
+
+  const color = await run(['document', 'snapshot', 'https://example.com/a.pdf', '--background', '#ffffff'], []);
+  assert.equal(color.code, 2);
+  assert.match(color.err, /--background on a snapshot takes white or transparent/);
+
+  const trim = await run(['image', 'process', 'https://example.com/a.jpg', '--op', 'grayscale', '--trim'], []);
+  assert.equal(trim.code, 2);
+  assert.match(trim.err, /--trim is for watermark document snapshot/);
+
+  const background = await run(['video', 'screenshot', 'https://example.com/a.mp4', '--seconds', '1', '--background', 'white'], []);
+  assert.equal(background.code, 2);
+  assert.match(background.err, /--background is for watermark image create and watermark document snapshot/);
+});
+
 test('webhook events and several outputs are sent', async () => {
   const outputs = [{ name: 'large', format: 'webp' }, { name: 'thumb', operations: [{ type: 'resize', width: 200, height: 200 }] }];
   const { calls } = await run(['image', 'process', 'https://example.com/a.jpg', '--op', 'grayscale', '--outputs-json', JSON.stringify(outputs), '--event', 'request.progress', '--event', 'request.succeeded', '--no-wait', '--json'], [{ status: 202, body: { id: 5, status: 'queued' } }]);

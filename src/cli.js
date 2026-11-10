@@ -12,7 +12,7 @@ Usage:
   watermark video screenshot <source> --seconds 5 [--auto] [--format png] [--out file]
   watermark document process <source> --op <operation> [--max-pages 10] [--out file]
   watermark document read <source>
-  watermark document snapshot <source> [--page 1] [--format png] [--out file]
+  watermark document snapshot <source> [--page 1] [--format png] [--background white|transparent] [--trim] [--out file]
   watermark request get <id> | watermark request abort <id>
   watermark requests [--limit 20] [--before <id>]
   watermark upload <file> | watermark upload get|delete <upl_id>
@@ -40,6 +40,11 @@ Operations (repeat --op; they run in order):
   More than one file from a request, each with its own operations and format:
   --outputs-json '[{"name":"large","format":"webp"},{"name":"thumb","operations":[{"type":"resize","width":200,"height":200}]}]'
 
+Snapshots of a page:
+  --background <b>        white (default) or transparent, to keep a logo's empty
+                          parts see-through; transparent needs --format png.
+  --trim                  Trim the empty edge, so a logo comes out as just the logo.
+
 Options:
   --out <file>            Wait, then download the result to this file.
   --no-wait               Return as soon as the request is queued.
@@ -62,7 +67,7 @@ const ACTIONS = {
   documents: ['process', 'read', 'snapshot'],
 };
 const REPEATABLE = new Set(['op', 'metadata', 'prefix', 'event']);
-const FLAGS = new Set(['json', 'no-wait', 'help', 'version', 'level', 'auto']);
+const FLAGS = new Set(['json', 'no-wait', 'help', 'version', 'level', 'auto', 'trim']);
 
 // Parse argv into positionals and options; repeatable options collect arrays.
 export function parseArgs(argv) {
@@ -272,13 +277,25 @@ async function runMedia(api, media, [action, source], options, { output, print, 
 
   const body = {};
 
+  const snapshot = media === 'documents' && action === 'snapshot';
+
   if (action === 'create') {
     if (!options.width || !options.height) throw new UsageError('watermark image create needs --width and --height.');
     body.width = Number(options.width);
     body.height = Number(options.height);
-    if (options.background) body.background = options.background;
   } else {
     body.source = await resolveSource(api, source);
+  }
+
+  if (options.background !== undefined) {
+    if (action !== 'create' && !snapshot) throw new UsageError('--background is for watermark image create and watermark document snapshot.');
+    if (snapshot && !['white', 'transparent'].includes(options.background)) throw new UsageError('--background on a snapshot takes white or transparent.');
+    body.background = options.background;
+  }
+
+  if (options.trim) {
+    if (!snapshot) throw new UsageError('--trim is for watermark document snapshot.');
+    body.trim = true;
   }
 
   if (options.level) {

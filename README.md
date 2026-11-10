@@ -30,7 +30,7 @@ watermark image create --width 1200 --height 300 --op 'text:text=Hi,font=inter-b
 watermark video process <source> --op <operation> [--max-duration 30] [--out file]
 watermark video read <source> | watermark video screenshot <source> --seconds 5 [--auto]   # --auto takes another frame when that one is blank
 watermark document process <source> --op <operation> [--max-pages 10] [--out file]
-watermark document read <source> | watermark document snapshot <source> --page 1
+watermark document read <source> | watermark document snapshot <source> --page 1 [--background transparent --format png] [--trim]   # a see-through, trimmed PNG of a logo drawn on a page
 watermark request get <id> | watermark request abort <id>
 watermark requests [--before <id>] | watermark account | watermark usage --group-by endpoint [--customer <id>]
 watermark upload photo.heic | watermark upload get|delete <upl_id>

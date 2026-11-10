@@ -29,13 +29,14 @@ watermark video process clip.mp4 --op watermark:image_url=https://example.com/lo
 watermark video screenshot clip.mp4 --seconds 5 --auto --format png --out frame.png   # --auto: if that frame is blank (black, white, a fade), take one 10% in or the middle
 watermark document process contract.pdf --op watermark:image_url=https://example.com/stamp.png,x=20,y=230 --out contract-stamped.pdf
 watermark document snapshot contract.pdf --page 1 --format png --out page-1.png
+watermark document snapshot logo.pdf --background transparent --trim --format png --out logo.png   # a logo drawn on a page, see-through and cut to its edge
 watermark operations image                                   # every operation and parameter, live from the API (also video, document)
 watermark fonts                                              # font names a text operation accepts
 watermark request get 1234                                   # follow a request started with --no-wait
 watermark account                                            # balance and limits
 ```
 
-Useful options on processing commands: `--out <file>` (wait, then download), `--no-wait` (print the queued request and return), `--timeout <seconds>` (default 300), `--format <fmt>`, `--ops-json '[…]'` instead of `--op`, `--max-duration <s>` (video), `--auto` (video screenshot: pass over a blank frame; `result.data.seconds` says which moment was used), `--max-pages <n>` (documents), `--customer <id>`, `--metadata key=value`, `--json`.
+Useful options on processing commands: `--out <file>` (wait, then download), `--no-wait` (print the queued request and return), `--timeout <seconds>` (default 300), `--format <fmt>`, `--ops-json '[…]'` instead of `--op`, `--max-duration <s>` (video), `--auto` (video screenshot: pass over a blank frame; `result.data.seconds` says which moment was used), `--max-pages <n>` (documents), `--background white|transparent` and `--trim` (document snapshot: `transparent` needs `--format png`), `--customer <id>`, `--metadata key=value`, `--json`.
 
 Operations that exist: images `resize`, `crop`, `rotate`, `flip`, `grayscale`, `border`, `watermark`, `thumbnail`, `compress`, `sepia`, `exposure`, `filter`, `remove_background`, `orient`, `text`, `trim`, `color`, `frame`, `protect`, `shave`, `line`, `adjust`, `color_profile`; videos `resize`, `crop`, `rotate`, `flip`, `grayscale`, `border`, `watermark`; documents `watermark` only (an image on every page; make a text stamp with `image create` first). `watermark` takes `image_url` or `image` (a `file_…` id), `x`, `y` from the top left, `tile_spacing_x`/`tile_spacing_y` to repeat it. Run `watermark operations image` before using a parameter you are not sure of.
 
