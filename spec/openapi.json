@@ -873,7 +873,7 @@
                     "Videos"
                 ],
                 "summary": "Read video",
-                "description": "Read dimensions, duration, codec, bitrate and frame rate.\n\nPrice: {{price:videos/read}} per request (accounts that have bought credits only). Failed requests are free.",
+                "description": "Read dimensions, duration, codec (`h264`, `hevc`, `prores`, ...), bit depth, bitrate and frame rate.\n\nPrice: {{price:videos/read}} per request (accounts that have bought credits only). Failed requests are free.",
                 "operationId": "readVideo",
                 "parameters": [
                     {
@@ -4154,6 +4154,28 @@
                 },
                 "additionalProperties": false
             },
+            "VideoOperationWebCopy": {
+                "type": "object",
+                "title": "web_copy",
+                "description": "Make a small copy that every browser plays, for viewing: H.264 (High, 8-bit) with AAC stereo in an MP4 that starts playing before it has downloaded, scaled down (never up) to `max_side`, an HDR video tone-mapped to SDR. Use it for an HEVC iPhone video, a ProRes, AVI, MKV or WMV file. It runs alone, as the only operation, and the output format is `mp4`.",
+                "required": [
+                    "type"
+                ],
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "const": "web_copy"
+                    },
+                    "max_side": {
+                        "description": "The most pixels on the longer side, 240-1920. A smaller video keeps its size.",
+                        "type": "integer",
+                        "minimum": 240,
+                        "maximum": 1920,
+                        "default": 1280
+                    }
+                },
+                "additionalProperties": false
+            },
             "VideoOperation": {
                 "description": "One video operation; `type` picks which.",
                 "oneOf": [
@@ -4177,6 +4199,9 @@
                     },
                     {
                         "$ref": "#/components/schemas/VideoOperationWatermark"
+                    },
+                    {
+                        "$ref": "#/components/schemas/VideoOperationWebCopy"
                     }
                 ],
                 "discriminator": {
@@ -4188,7 +4213,8 @@
                         "flip": "#/components/schemas/VideoOperationFlip",
                         "grayscale": "#/components/schemas/VideoOperationGrayscale",
                         "border": "#/components/schemas/VideoOperationBorder",
-                        "watermark": "#/components/schemas/VideoOperationWatermark"
+                        "watermark": "#/components/schemas/VideoOperationWatermark",
+                        "web_copy": "#/components/schemas/VideoOperationWebCopy"
                     }
                 }
             },
