@@ -44,6 +44,7 @@ const COVERAGE = {
   'POST /v1/documents/process': { runs: [['document', 'process', URL_SOURCE, '--op', 'grayscale', '--max-pages', '2', ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
   'POST /v1/documents/read': { runs: [['document', 'read', URL_SOURCE, ...NO_WAIT]], allow: { wait: WAIT } },
   'POST /v1/documents/snapshot': { runs: [['document', 'snapshot', URL_SOURCE, '--page', '1', '--format', 'png', '--background', 'transparent', '--trim', ...NO_WAIT], ['document', 'snapshot', URL_SOURCE, ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
+  'POST /v1/documents/convert': { runs: [['document', 'convert', URL_SOURCE, '--format', 'pdf', ...NO_WAIT], ['document', 'convert', URL_SOURCE, ...OUTPUTS, ...NO_WAIT]], allow: { wait: WAIT } },
   'GET /v1/requests': { runs: [['requests', '--limit', '5', '--before', '10', '--json']] },
   'GET /v1/requests/{id}': { runs: [['request', 'get', '1234', '--json'], ['image', 'process', URL_SOURCE, '--op', 'grayscale', '--json']] },
   'POST /v1/requests/{id}/abort': { runs: [['request', 'abort', '1234', '--json']] },

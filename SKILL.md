@@ -30,6 +30,7 @@ watermark video screenshot clip.mp4 --seconds 5 --auto --format png --out frame.
 watermark document process contract.pdf --op watermark:image_url=https://example.com/stamp.png,x=20,y=230 --out contract-stamped.pdf
 watermark document snapshot contract.pdf --page 1 --format png --out page-1.png
 watermark document snapshot logo.pdf --background transparent --trim --format png --out logo.png   # a logo drawn on a page, see-through and cut to its edge
+watermark document convert deck.pptx --out deck.pdf          # a Word, PowerPoint, OpenDocument or RTF file as a PDF of every page
 watermark operations image                                   # every operation and parameter, live from the API (also video, document)
 watermark fonts                                              # font names a text operation accepts
 watermark request get 1234                                   # follow a request started with --no-wait

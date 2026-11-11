@@ -13,6 +13,7 @@ Usage:
   watermark document process <source> --op <operation> [--max-pages 10] [--out file]
   watermark document read <source>
   watermark document snapshot <source> [--page 1] [--format png] [--background white|transparent] [--trim] [--out file]
+  watermark document convert <source> [--out file.pdf]
   watermark request get <id> | watermark request abort <id>
   watermark requests [--limit 20] [--before <id>]
   watermark upload <file> | watermark upload get|delete <upl_id>
@@ -64,7 +65,7 @@ const MEDIA = { image: 'images', images: 'images', video: 'videos', videos: 'vid
 const ACTIONS = {
   images: ['process', 'read', 'create'],
   videos: ['process', 'read', 'screenshot'],
-  documents: ['process', 'read', 'snapshot'],
+  documents: ['process', 'read', 'snapshot', 'convert'],
 };
 const REPEATABLE = new Set(['op', 'metadata', 'prefix', 'event']);
 const FLAGS = new Set(['json', 'no-wait', 'help', 'version', 'level', 'auto', 'trim']);

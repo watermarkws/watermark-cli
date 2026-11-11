@@ -13,7 +13,7 @@ const source = await readFile(new URL('../src/cli.js', import.meta.url), 'utf8')
 const COMMANDS = {
   image: ['process', 'read', 'create'],
   video: ['process', 'read', 'screenshot'],
-  document: ['process', 'read', 'snapshot'],
+  document: ['process', 'read', 'snapshot', 'convert'],
   request: ['get', 'abort'],
   upload: null,
   file: ['get', 'delete'],

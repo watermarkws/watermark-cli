@@ -249,6 +249,14 @@ test('a snapshot can keep a logo see-through and trim it, and those options are 
   assert.match(background.err, /--background is for watermark image create and watermark document snapshot/);
 });
 
+test('a document converts to a PDF through documents/convert', async () => {
+  const { calls, code } = await run(['document', 'convert', 'https://example.com/deck.pptx', '--no-wait', '--json'], [{ status: 202, body: { id: 9, status: 'queued' } }]);
+  assert.equal(code, 0);
+  assert.equal(calls[0].method, 'POST');
+  assert.match(calls[0].url, /\/v1\/documents\/convert$/);
+  assert.deepEqual(calls[0].body, { source: 'https://example.com/deck.pptx' });
+});
+
 test('webhook events and several outputs are sent', async () => {
   const outputs = [{ name: 'large', format: 'webp' }, { name: 'thumb', operations: [{ type: 'resize', width: 200, height: 200 }] }];
   const { calls } = await run(['image', 'process', 'https://example.com/a.jpg', '--op', 'grayscale', '--outputs-json', JSON.stringify(outputs), '--event', 'request.progress', '--event', 'request.succeeded', '--no-wait', '--json'], [{ status: 202, body: { id: 5, status: 'queued' } }]);

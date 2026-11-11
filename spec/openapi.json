@@ -32,7 +32,7 @@
         },
         {
             "name": "Documents",
-            "description": "Watermark every page, or render one page as an image. PDF and Word (DOCX) in; a PDF stays a PDF and a Word file a Word file. Snapshots are images."
+            "description": "Watermark every page, render one page as an image, or turn an office document into a PDF. PDF, Word (DOCX and DOC), OpenDocument text, RTF and PowerPoint (PPTX) in. A PDF stays a PDF and a DOCX a DOCX; the others come out as a PDF, a deck one page per slide. Snapshots are images."
         },
         {
             "name": "Requests",
@@ -87,6 +87,23 @@
                                                 "image_url": "https://example.com/logo.png",
                                                 "x": 552,
                                                 "y": 524
+                                            }
+                                        ]
+                                    }
+                                },
+                                "watermark-sized": {
+                                    "summary": "Watermark: Resized, faded and turned in the same step",
+                                    "value": {
+                                        "source": "https://example.com/photo.jpg",
+                                        "operations": [
+                                            {
+                                                "type": "watermark",
+                                                "image_url": "https://example.com/logo.png",
+                                                "x": 300,
+                                                "y": 280,
+                                                "width": 300,
+                                                "opacity": 70,
+                                                "rotation": -20
                                             }
                                         ]
                                     }
@@ -672,6 +689,23 @@
                                         ]
                                     }
                                 },
+                                "watermark-sized": {
+                                    "summary": "Watermark: Resized, faded and turned in the same step",
+                                    "value": {
+                                        "source": "https://example.com/clip.mp4",
+                                        "operations": [
+                                            {
+                                                "type": "watermark",
+                                                "image_url": "https://example.com/logo.png",
+                                                "x": 300,
+                                                "y": 280,
+                                                "width": 300,
+                                                "opacity": 70,
+                                                "rotation": -20
+                                            }
+                                        ]
+                                    }
+                                },
                                 "watermark-tiled": {
                                     "summary": "Watermark: Repeated across the whole video",
                                     "value": {
@@ -1174,6 +1208,77 @@
                                     "id": 1234,
                                     "object": "request",
                                     "endpoint": "documents/snapshot",
+                                    "status": "queued",
+                                    "livemode": true,
+                                    "source": "https://example.com/contract.pdf",
+                                    "created_at": "2026-10-11T15:00:00Z"
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "Finished within `wait`; or the request first sent with this Idempotency-Key.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Request"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/401"
+                    },
+                    "402": {
+                        "$ref": "#/components/responses/402"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/422"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/429"
+                    }
+                }
+            }
+        },
+        "/v1/documents/convert": {
+            "post": {
+                "tags": [
+                    "Documents"
+                ],
+                "summary": "Convert document",
+                "description": "Turn a Word, PowerPoint, OpenDocument or RTF file into a PDF of every page, a deck one page per slide, to show or keep it as a PDF. A PDF source fails with `unsupported_media`, as there is nothing to convert.\n\nPrice: {{price:documents/convert}} per request. Failed requests are free.",
+                "operationId": "convertDocument",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ConvertRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Accepted, and not finished yet: queued, or still running when `wait` ended.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Request"
+                                },
+                                "example": {
+                                    "id": 1234,
+                                    "object": "request",
+                                    "endpoint": "documents/convert",
                                     "status": "queued",
                                     "livemode": true,
                                     "source": "https://example.com/contract.pdf",
@@ -2589,7 +2694,7 @@
             "bearerAuth": {
                 "type": "http",
                 "scheme": "bearer",
-                "description": "An API key: `wm_live_…` (charged) or `wm_test_…` (free, limited)."
+                "description": "An API key: `wm_live_…` (charged) or `wm_test_…` (free, limited, results stamped \"TEST KEY\")."
             }
         },
         "parameters": {
@@ -2848,7 +2953,7 @@
             "ImageOperationWatermark": {
                 "type": "object",
                 "title": "watermark",
-                "description": "Place an image (a logo, usually a transparent PNG) over the file, at its own size. Resize the watermark image beforehand.",
+                "description": "Place an image (a logo, usually a transparent PNG) over the file, at its own size or resized, faded, tinted and turned on the way.",
                 "required": [
                     "type",
                     "x",
@@ -2878,13 +2983,13 @@
                         "description": "The watermark image as a file an earlier request made (`file_…`) or an object in your connected bucket. Send this or `image_url`."
                     },
                     "x": {
-                        "description": "The x position in pixels, from the top left.",
+                        "description": "The x position in pixels, from the top left, of the watermark's top-left corner; when it is turned, of that corner before the turn.",
                         "type": "integer",
                         "minimum": -65535,
                         "maximum": 65535
                     },
                     "y": {
-                        "description": "The y position in pixels, from the top left.",
+                        "description": "The y position in pixels, from the top left, of the watermark's top-left corner; when it is turned, of that corner before the turn.",
                         "type": "integer",
                         "minimum": -65535,
                         "maximum": 65535
@@ -2900,6 +3005,31 @@
                         "type": "number",
                         "minimum": 0,
                         "maximum": 65535
+                    },
+                    "width": {
+                        "description": "Resize the watermark image to this width in pixels first; the height follows. Left out, it goes on at its own size.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 65535
+                    },
+                    "opacity": {
+                        "description": "The watermark's opacity, 0-100.",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "default": 100
+                    },
+                    "rotation": {
+                        "description": "Turn the watermark by degrees clockwise, about its centre: it stays centred where it would be unturned.",
+                        "type": "integer",
+                        "minimum": -360,
+                        "maximum": 360,
+                        "default": 0
+                    },
+                    "tint": {
+                        "description": "Paint the whole watermark this one color, keeping its transparency: a white logo for dark photos, say. A hex color, such as \"#ffffff\" or \"#fff\".",
+                        "type": "string",
+                        "pattern": "^#?([0-9A-Fa-f]{3}){1,2}$"
                     }
                 },
                 "additionalProperties": false
@@ -5517,6 +5647,20 @@
                         "default": 1,
                         "description": "Which page, from 1."
                     },
+                    "background": {
+                        "type": "string",
+                        "enum": [
+                            "white",
+                            "transparent"
+                        ],
+                        "default": "white",
+                        "description": "What the page's empty parts become. `transparent` keeps them see-through, as for a logo drawn on a page; it needs a `png` output."
+                    },
+                    "trim": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Trim the empty edge around what the page shows, so a logo comes out as just the logo."
+                    },
                     "outputs": {
                         "type": "array",
                         "minItems": 1,
@@ -5634,6 +5778,205 @@
                                     "png"
                                 ],
                                 "default": "jpg",
+                                "description": "The file format of the result."
+                            }
+                        },
+                        "additionalProperties": false
+                    },
+                    "webhook_url": {
+                        "type": "string",
+                        "format": "uri",
+                        "maxLength": 1024,
+                        "description": "Where to post the request when it finishes. Defaults to the account's webhook, if set. See [Webhooks](https://api.watermark.ws/docs/webhooks.md)."
+                    },
+                    "customer": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "description": "Your own reference for who the request is for. Returned with it, and totalled by `GET /v1/usage?group_by=customer`."
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "maxProperties": 20,
+                        "additionalProperties": {
+                            "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                            ],
+                            "maxLength": 255
+                        },
+                        "description": "Up to 20 keys of your own, returned with the request and in its webhooks."
+                    },
+                    "events": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "request.succeeded",
+                                "request.failed",
+                                "request.aborted",
+                                "request.progress"
+                            ]
+                        },
+                        "description": "The webhook events to send. Defaults to the three finishing ones; add `request.progress` for progress while it runs. See [Webhooks](https://api.watermark.ws/docs/webhooks.md)."
+                    },
+                    "wait": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 25,
+                        "default": 0,
+                        "description": "Seconds to wait for the result in this response. Finished in time, the answer is `200` with the finished request; otherwise `202`, and the request goes on. See [Waiting](https://api.watermark.ws/docs/requests.md#waiting-for-the-result)."
+                    }
+                }
+            },
+            "ConvertRequest": {
+                "type": "object",
+                "required": [
+                    "source"
+                ],
+                "example": {
+                    "source": "https://example.com/proposal.docx"
+                },
+                "properties": {
+                    "source": {
+                        "description": "The file: a public `http` or `https` URL, a file an earlier request made (`file_…`), or an object in your connected bucket. See [Sources](https://api.watermark.ws/docs/files.md#sources).",
+                        "oneOf": [
+                            {
+                                "type": "string",
+                                "format": "uri",
+                                "maxLength": 2048,
+                                "description": "A URL."
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^file_[A-Za-z0-9]{22}$",
+                                "description": "A file id."
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^upl_[A-Za-z0-9]{22}$",
+                                "description": "An upload id: used once, by the first request that succeeds."
+                            },
+                            {
+                                "$ref": "#/components/schemas/StorageObject"
+                            }
+                        ]
+                    },
+                    "outputs": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 1,
+                        "description": "The file to make. This endpoint makes one.",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "name"
+                            ],
+                            "additionalProperties": false,
+                            "properties": {
+                                "name": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9_-]{1,32}$",
+                                    "description": "Your name for it, unique in the request, such as `preview` or `thumb`."
+                                },
+                                "format": {
+                                    "type": "string",
+                                    "enum": [
+                                        "pdf"
+                                    ],
+                                    "default": "pdf"
+                                },
+                                "destination": {
+                                    "description": "Where the output goes. Left out, the API keeps it for you and links to it. A presigned URL or your own bucket need an account that has bought credits. See [Destinations](https://api.watermark.ws/docs/files.md#destinations).",
+                                    "oneOf": [
+                                        {
+                                            "type": "object",
+                                            "title": "Kept by the API",
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "content_disposition": {
+                                                    "type": "string",
+                                                    "description": "`inline` or `attachment`, optionally with `; filename=\"…\"`: how a browser opening the download link treats the file."
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "type": "object",
+                                            "title": "A presigned URL",
+                                            "required": [
+                                                "url"
+                                            ],
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "url": {
+                                                    "type": "string",
+                                                    "format": "uri",
+                                                    "maxLength": 4096,
+                                                    "description": "An https URL you signed for one PUT, from S3, R2, Google Cloud Storage, Azure or anything that takes one."
+                                                },
+                                                "method": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "PUT"
+                                                    ],
+                                                    "default": "PUT"
+                                                },
+                                                "headers": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "string"
+                                                    },
+                                                    "description": "Headers the signature needs: Content-Type, Cache-Control, Content-Disposition, Content-Encoding, x-amz-*, x-goog-*, x-ms-*."
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "type": "object",
+                                            "title": "Your bucket",
+                                            "required": [
+                                                "storage",
+                                                "key"
+                                            ],
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "storage": {
+                                                    "type": "string",
+                                                    "description": "A verified storage connection that may write (`stg_…`)."
+                                                },
+                                                "key": {
+                                                    "type": "string",
+                                                    "maxLength": 1024,
+                                                    "description": "The object key, under one of the connection's prefixes."
+                                                },
+                                                "cache_control": {
+                                                    "type": "string",
+                                                    "description": "The object's Cache-Control."
+                                                },
+                                                "content_type": {
+                                                    "type": "string",
+                                                    "description": "Must be the output format's own type; set for you when left out."
+                                                },
+                                                "content_disposition": {
+                                                    "type": "string",
+                                                    "description": "`inline` or `attachment`, optionally with `; filename=\"…\"`."
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "output": {
+                        "type": "object",
+                        "description": "How to save the result: the same as one output named `result`. Send `outputs` instead for more than one file.",
+                        "properties": {
+                            "format": {
+                                "type": "string",
+                                "enum": [
+                                    "pdf"
+                                ],
+                                "default": "pdf",
                                 "description": "The file format of the result."
                             }
                         },
@@ -6358,7 +6701,7 @@
                             },
                             "requests_per_day": {
                                 "type": "integer",
-                                "description": "Test keys only."
+                                "description": "Test keys only: shared by all of the account's test keys."
                             }
                         }
                     },

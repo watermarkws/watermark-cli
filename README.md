@@ -31,6 +31,7 @@ watermark video process <source> --op <operation> [--max-duration 30] [--out fil
 watermark video read <source> | watermark video screenshot <source> --seconds 5 [--auto]   # --auto takes another frame when that one is blank
 watermark document process <source> --op <operation> [--max-pages 10] [--out file]
 watermark document read <source> | watermark document snapshot <source> --page 1 [--background transparent --format png] [--trim]   # a see-through, trimmed PNG of a logo drawn on a page
+watermark document convert deck.pptx --out deck.pdf   # a Word, PowerPoint, OpenDocument or RTF file as a PDF of every page
 watermark request get <id> | watermark request abort <id>
 watermark requests [--before <id>] | watermark account | watermark usage --group-by endpoint [--customer <id>]
 watermark upload photo.heic | watermark upload get|delete <upl_id>
