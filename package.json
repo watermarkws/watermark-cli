@@ -1,6 +1,6 @@
 {
   "name": "@watermarkws/cli",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Watermark, resize and convert images, videos and PDFs from the command line with the Watermark API.",
   "type": "module",
   "bin": {
